@@ -92,8 +92,8 @@ class MemoryManager:
             frag_interna = 0
             
             if pid is not None and pid in process_sizes:
-                # Calculate internal fragmentation: partition_size - process_size
-                frag_interna = partition.size - process_sizes[pid]
+                # Calculate internal fragmentation ensuring it is never negative
+                frag_interna = partition.frag_interna(process_sizes[pid])
             elif pid is not None:
                 # If process size not found, assume no fragmentation
                 frag_interna = 0
