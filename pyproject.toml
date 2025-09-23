@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "memsim"
+version = "0.1.0"
+description = "Memory simulation tool for process scheduling and memory management"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "memsim", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
