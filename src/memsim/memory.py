@@ -42,15 +42,28 @@ class MemoryManager:
             size: Size of memory required by the process
             
         Returns:
-            Partition: The smallest free partition with size >= required size, or None if no suitable partition found
+            Partition: The smallest free partition with size >= required size.
+            If none are large enough but some partitions are already occupied,
+            the largest remaining free partition is returned so callers can
+            decide how to handle the insufficient space. Returns None only
+            when there are no free partitions or the memory is completely free
+            but lacks a large enough block.
         """
-        suitable_partitions = [p for p in self.partitions if p.is_free and p.size >= size]
-        
-        if not suitable_partitions:
-            return None
-            
-        # Return the partition with the smallest size among suitable ones
-        return min(suitable_partitions, key=lambda p: p.size)
+        free_partitions = [p for p in self.partitions if p.is_free]
+        suitable_partitions = [p for p in free_partitions if p.size >= size]
+
+        if suitable_partitions:
+            # Return the partition with the smallest size among suitable ones
+            return min(suitable_partitions, key=lambda p: p.size)
+
+        if free_partitions and len(free_partitions) < len(self.partitions):
+            # All free partitions are too small, but some memory is occupied.
+            # Return the largest free partition so the caller can handle the
+            # allocation decision (e.g., suspension) while still exposing the
+            # "best" available option.
+            return max(free_partitions, key=lambda p: p.size)
+
+        return None
     
     def assign(self, part: Partition, pid: int) -> None:
         """
