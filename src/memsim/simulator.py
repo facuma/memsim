@@ -127,14 +127,14 @@ class MemorySimulator:
                 # Try to allocate memory with Best-Fit
                 partition = self.memory_manager.best_fit(process.size)
                 if partition is not None:
-                    # Allocate memory and add to ready queue
                     self.memory_manager.assign(partition, process.pid)
+                    if process.remaining <= 0:
+                        process.remaining = process.burst
+                    process.state = State.READY
                     self.scheduler.push_ready(process)
-                    self.logger.debug(f"Process {process.pid} admitted to {partition.id} (size={process.size})")
                 else:
-                    # No suitable partition, add to suspended queue
+                    process.state = State.READY_SUSP
                     self.scheduler.enqueue_suspended(process)
-                    self.logger.debug(f"Process {process.pid} suspended - no suitable partition (size={process.size})")
             else:
                 # Memory full, add to suspended queue
                 self.scheduler.enqueue_suspended(process)
@@ -143,34 +143,30 @@ class MemorySimulator:
     def _schedule_srtf(self):
         """Handle SRTF scheduling with preemption."""
         if self.scheduler.running is None:
-            # CPU is free, take next process from ready queue
             if self.scheduler.ready_heap:
                 process = self.scheduler.pop_ready_min()
                 self.scheduler.running = process
                 if process.start_time is None:
                     process.start_time = self.current_time
-                self.logger.debug(f"Process {process.pid} started running (remaining={process.remaining})")
+                process.state = State.RUNNING
         else:
-            # CPU is occupied, check for preemption
             if self.scheduler.ready_heap:
                 min_ready = self.scheduler.peek_ready_min()
                 if min_ready.remaining < self.scheduler.running.remaining:
-                    # Preempt current process
                     preempted = self.scheduler.running
                     self.scheduler.running = None
+                    preempted.state = State.READY
                     self.scheduler.push_ready(preempted)
-                    
-                    # Take new process
                     new_process = self.scheduler.pop_ready_min()
                     self.scheduler.running = new_process
                     if new_process.start_time is None:
                         new_process.start_time = self.current_time
-                    self.logger.debug(f"SRTF preemption: Process {preempted.pid} preempted by {new_process.pid} (remaining: {preempted.remaining} -> {new_process.remaining})")
-    
+                    new_process.state = State.RUNNING
+
     def _execute_tick(self):
         """Execute one time tick."""
         if self.scheduler.running is not None:
-            self.scheduler.running.remaining -= 1
+            self.scheduler.running.remaining = max(0, self.scheduler.running.remaining - 1)
     
     def _handle_termination(self):
         """Handle process termination."""
@@ -199,15 +195,14 @@ class MemorySimulator:
             # Try to allocate memory with Best-Fit
             partition = self.memory_manager.best_fit(process.size)
             if partition is not None:
-                # Allocate memory and add to ready queue
                 self.memory_manager.assign(partition, process.pid)
+                if process.remaining <= 0:
+                    process.remaining = process.burst
+                process.state = State.READY
                 self.scheduler.push_ready(process)
-                self.logger.debug(f"Process {process.pid} desuspended to {partition.id} (size={process.size})")
             else:
-                # No suitable partition, put back at front of suspended queue
                 self.scheduler.ready_susp.appendleft(process)
-                self.logger.debug(f"Process {process.pid} remains suspended - no suitable partition")
-                break  # Stop trying to desuspend
+                break
     
     def _collect_state_snapshot(self) -> str:
         """Collect current state snapshot for logging."""

@@ -1,0 +1,9 @@
+pid,arrival,burst,start_time,finish_time,turnaround,wait,size
+1,0,1,0,1,1,0,64
+2,1,1,1,2,1,0,128
+
+SUMMARY,,,,,,,
+avg_turnaround,1.0
+avg_wait,0.0
+throughput,1.0
+tiempo_total,2
