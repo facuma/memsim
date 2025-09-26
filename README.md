@@ -38,6 +38,7 @@ python -m memsim --csv examples/processes_example.csv --tick-log events --no-hea
 
 # Ejecución interactiva tick a tick
 python -m memsim --csv examples/processes_example.csv --interactive
+
 ```
 
 ### Interfaz gráfica de usuario (GUI)
@@ -64,6 +65,10 @@ poetry run pyinstaller -F -n memsim_gui src/memsim/gui.py
 
 El binario quedará en `dist/memsim_gui.exe`. Puedes distribuirlo tal cual o integrarlo en un instalador (por ejemplo, Inno Setup). Asegúrate de incluir los ejemplos de CSV o indicar que el usuario debe seleccionar su propio archivo al abrir la aplicación.
 
+
+```
+
+
 ### Modo interactivo
 
 Con la opción `--interactive` la simulación se inicializa y queda a la espera de entradas del usuario:
@@ -87,7 +92,7 @@ Todos los mensajes del modo interactivo están localizados en español para faci
 - `--no-header`: Omite los encabezados de las tablas finales.
 - `--interactive`: Activa la ejecución tick a tick descrita anteriormente.
 
-### Ejemplo de salida
+### Ejemplo de salid
 
 ```
 --- Tick 0 ---
