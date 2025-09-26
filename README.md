@@ -38,6 +38,7 @@ python -m memsim --csv examples/processes_example.csv --tick-log events --no-hea
 
 # Ejecución interactiva tick a tick
 python -m memsim --csv examples/processes_example.csv --interactive
+
 ```
 
 ### Interfaz gráfica de usuario (GUI)
@@ -50,6 +51,7 @@ python -m memsim.gui
 
 # O bien, usando Poetry
 poetry run python -m memsim.gui
+
 ```
 
 En Windows puedes crear un acceso directo que ejecute `python -m memsim.gui` o empaquetar el programa con PyInstaller para distribuir un `.exe`.
@@ -63,6 +65,26 @@ poetry run pyinstaller -F -n memsim_gui src/memsim/gui.py
 ```
 
 El binario quedará en `dist/memsim_gui.exe`. Puedes distribuirlo tal cual o integrarlo en un instalador (por ejemplo, Inno Setup). Asegúrate de incluir los ejemplos de CSV o indicar que el usuario debe seleccionar su propio archivo al abrir la aplicación.
+
+
+```
+
+En Windows puedes crear un acceso directo que ejecute `python -m memsim.gui` o empaquetar el programa con PyInstaller para distribuir un `.exe`.
+
+### Creación de ejecutable en Windows con PyInstaller
+
+Con PyInstaller es posible generar un ejecutable autónomo que incluya la GUI y acepte un CSV proporcionado por el usuario:
+
+```bash
+poetry run pyinstaller -F -n memsim_gui src/memsim/gui.py
+```
+
+El binario quedará en `dist/memsim_gui.exe`. Puedes distribuirlo tal cual o integrarlo en un instalador (por ejemplo, Inno Setup). Asegúrate de incluir los ejemplos de CSV o indicar que el usuario debe seleccionar su propio archivo al abrir la aplicación.
+
+
+```
+
+
 
 ### Modo interactivo
 
@@ -87,7 +109,9 @@ Todos los mensajes del modo interactivo están localizados en español para faci
 - `--no-header`: Omite los encabezados de las tablas finales.
 - `--interactive`: Activa la ejecución tick a tick descrita anteriormente.
 
-### Ejemplo de salida
+
+### Ejemplo de salid
+
 
 ```
 --- Tick 0 ---

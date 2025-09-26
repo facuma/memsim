@@ -23,7 +23,9 @@ class MemSimGUI(tk.Tk):
         self.simulation_started = False
         self.simulation_finished = False
 
+
         self._configure_styles()
+
         self._create_widgets()
         self._configure_shortcuts()
         self._update_actions_state()
@@ -32,6 +34,7 @@ class MemSimGUI(tk.Tk):
     # ------------------------------------------------------------------
     # Configuración de la interfaz
     # ------------------------------------------------------------------
+
     def _configure_styles(self) -> None:
         self.style = ttk.Style(self)
         try:
@@ -144,6 +147,7 @@ class MemSimGUI(tk.Tk):
             arrowcolor=self.palette["accent"],
         )
 
+
     def _create_widgets(self) -> None:
         self._create_menu()
         self._create_toolbar()
@@ -191,12 +195,15 @@ class MemSimGUI(tk.Tk):
         )
 
     def _create_toolbar(self) -> None:
+
         toolbar = ttk.Frame(self, style="Toolbar.TFrame")
+
         toolbar.pack(fill=tk.X)
 
         self.toolbar_buttons: Dict[str, ttk.Button] = {}
 
         self.toolbar_buttons["open_csv"] = ttk.Button(
+
             toolbar, text="Abrir CSV", style="Secondary.TButton", command=self.on_open_csv
         )
         self.toolbar_buttons["open_csv"].pack(side=tk.LEFT, padx=6, pady=6)
@@ -234,30 +241,36 @@ class MemSimGUI(tk.Tk):
         snapshot_container = ttk.Frame(left_frame)
         snapshot_container.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
+
         self.snapshot_text = tk.Text(
             snapshot_container,
             wrap=tk.NONE,
             font=("Consolas", 10),
             state=tk.DISABLED,
+
             background=self.palette["surface"],
             foreground=self.palette["text"],
             insertbackground=self.palette["accent"],
             relief=tk.FLAT,
             padx=8,
             pady=8,
+
         )
         self.snapshot_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(
+
             snapshot_container,
             orient=tk.VERTICAL,
             command=self.snapshot_text.yview,
             style="Snapshot.Vertical.TScrollbar",
+
         )
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.snapshot_text.configure(yscrollcommand=scrollbar.set)
 
         # Panel derecho: estado y métricas
+
         right_frame = ttk.Frame(paned, padding=12, style="Panel.TFrame")
         paned.add(right_frame, weight=2)
 
@@ -271,6 +284,7 @@ class MemSimGUI(tk.Tk):
         ttk.Label(estado_frame, textvariable=self.cpu_var, style="Highlight.TLabel").pack(anchor=tk.W, pady=(0, 4), padx=8)
 
         resumen_frame = ttk.LabelFrame(right_frame, text="Métricas finales", style="Card.TLabelframe")
+
         resumen_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
         self.metrics_tree = ttk.Treeview(
@@ -287,7 +301,9 @@ class MemSimGUI(tk.Tk):
             ),
             show="headings",
             height=8,
+
             style="Metrics.Treeview",
+
         )
         headings = {
             "pid": "PID",
@@ -304,6 +320,7 @@ class MemSimGUI(tk.Tk):
             self.metrics_tree.column(key, width=90, anchor=tk.CENTER)
 
         self.metrics_tree.pack(fill=tk.BOTH, expand=True)
+
 
         promedios_frame = ttk.Frame(resumen_frame, style="Panel.TFrame")
         promedios_frame.pack(fill=tk.X, pady=(8, 0))
@@ -334,6 +351,7 @@ class MemSimGUI(tk.Tk):
             anchor="w",
             font=("Segoe UI", 9),
         ).pack(fill=tk.X)
+
 
     def _configure_shortcuts(self) -> None:
         self.bind("<Control-o>", lambda _: self.on_open_csv())
