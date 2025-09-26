@@ -23,6 +23,9 @@ class MemSimGUI(tk.Tk):
         self.simulation_started = False
         self.simulation_finished = False
 
+
+        self._configure_styles()
+
         self._create_widgets()
         self._configure_shortcuts()
         self._update_actions_state()
@@ -31,6 +34,120 @@ class MemSimGUI(tk.Tk):
     # ------------------------------------------------------------------
     # Configuración de la interfaz
     # ------------------------------------------------------------------
+
+    def _configure_styles(self) -> None:
+        self.style = ttk.Style(self)
+        try:
+            self.style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        self.palette = {
+            "background": "#0b1220",
+            "surface": "#131f33",
+            "surface_alt": "#1a2942",
+            "panel": "#18233a",
+            "border": "#253552",
+            "text": "#e2e8f0",
+            "muted": "#94a3b8",
+            "accent": "#38bdf8",
+            "accent_alt": "#0ea5e9",
+            "primary": "#6366f1",
+            "primary_dark": "#4f46e5",
+            "secondary": "#f97316",
+            "secondary_dark": "#ea580c",
+            "highlight": "#22c55e",
+            "highlight_text": "#06200f",
+        }
+
+        self.configure(background=self.palette["background"])
+        self.option_add("*Font", "Segoe UI 10")
+
+        self.style.configure("Toolbar.TFrame", background=self.palette["surface"], padding=4)
+        self.style.configure("Main.TPanedwindow", background=self.palette["background"], bordercolor=self.palette["border"], relief="flat")
+        self.style.configure("Panel.TFrame", background=self.palette["panel"])
+        self.style.configure("SectionTitle.TLabel", background=self.palette["panel"], foreground=self.palette["accent"], font=("Segoe UI Semibold", 11))
+        self.style.configure("Body.TLabel", background=self.palette["panel"], foreground=self.palette["text"])
+        self.style.configure("Highlight.TLabel", background=self.palette["panel"], foreground=self.palette["accent"])
+        self.style.configure("Status.TLabel", background=self.palette["surface_alt"], foreground=self.palette["text"], font=("Segoe UI", 9))
+
+        self.style.configure(
+            "Card.TLabelframe",
+            background=self.palette["panel"],
+            foreground=self.palette["accent"],
+            borderwidth=1,
+            relief="solid",
+            bordercolor=self.palette["border"],
+        )
+        self.style.configure(
+            "Card.TLabelframe.Label",
+            background=self.palette["panel"],
+            foreground=self.palette["accent"],
+            font=("Segoe UI Semibold", 10),
+        )
+
+        self.style.configure(
+            "Primary.TButton",
+            background=self.palette["primary"],
+            foreground=self.palette["text"],
+            borderwidth=1,
+            focusthickness=3,
+            focuscolor=self.palette["accent"],
+            padding=(12, 6),
+        )
+        self.style.map(
+            "Primary.TButton",
+            background=[("active", self.palette["primary_dark"]), ("disabled", self.palette["surface"])],
+            foreground=[("disabled", self.palette["muted"])],
+        )
+
+        self.style.configure(
+            "Secondary.TButton",
+            background=self.palette["secondary"],
+            foreground=self.palette["background"],
+            borderwidth=1,
+            padding=(12, 6),
+        )
+        self.style.map(
+            "Secondary.TButton",
+            background=[("active", self.palette["secondary_dark"]), ("disabled", self.palette["surface"])],
+            foreground=[("disabled", self.palette["muted"])],
+        )
+
+        self.style.configure(
+            "Metrics.Treeview",
+            background=self.palette["surface"],
+            fieldbackground=self.palette["surface"],
+            foreground=self.palette["text"],
+            bordercolor=self.palette["border"],
+            rowheight=26,
+        )
+        self.style.configure(
+            "Metrics.Treeview.Heading",
+            background=self.palette["accent"],
+            foreground=self.palette["background"],
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+        )
+        self.style.map(
+            "Metrics.Treeview",
+            background=[("selected", self.palette["highlight"])],
+            foreground=[("selected", self.palette["highlight_text"])],
+        )
+        self.style.map(
+            "Metrics.Treeview.Heading",
+            background=[("active", self.palette["accent_alt"])],
+        )
+
+        self.style.configure(
+            "Snapshot.Vertical.TScrollbar",
+            background=self.palette["surface_alt"],
+            troughcolor=self.palette["surface"],
+            bordercolor=self.palette["border"],
+            arrowcolor=self.palette["accent"],
+        )
+
+
     def _create_widgets(self) -> None:
         self._create_menu()
         self._create_toolbar()
@@ -78,77 +195,96 @@ class MemSimGUI(tk.Tk):
         )
 
     def _create_toolbar(self) -> None:
-        toolbar = ttk.Frame(self, padding=(8, 4))
+
+        toolbar = ttk.Frame(self, style="Toolbar.TFrame")
+
         toolbar.pack(fill=tk.X)
 
         self.toolbar_buttons: Dict[str, ttk.Button] = {}
 
         self.toolbar_buttons["open_csv"] = ttk.Button(
-            toolbar, text="Abrir CSV", command=self.on_open_csv
+
+            toolbar, text="Abrir CSV", style="Secondary.TButton", command=self.on_open_csv
         )
-        self.toolbar_buttons["open_csv"].pack(side=tk.LEFT, padx=4)
+        self.toolbar_buttons["open_csv"].pack(side=tk.LEFT, padx=6, pady=6)
 
         self.toolbar_buttons["initialize"] = ttk.Button(
-            toolbar, text="Inicializar", command=self.on_initialize
+            toolbar, text="Inicializar", style="Primary.TButton", command=self.on_initialize
         )
-        self.toolbar_buttons["initialize"].pack(side=tk.LEFT, padx=4)
+        self.toolbar_buttons["initialize"].pack(side=tk.LEFT, padx=6, pady=6)
 
         self.toolbar_buttons["step"] = ttk.Button(
-            toolbar, text="Paso", command=self.on_step
+            toolbar, text="Paso", style="Primary.TButton", command=self.on_step
         )
-        self.toolbar_buttons["step"].pack(side=tk.LEFT, padx=4)
+        self.toolbar_buttons["step"].pack(side=tk.LEFT, padx=6, pady=6)
 
         self.toolbar_buttons["step_event"] = ttk.Button(
-            toolbar, text="Hasta evento", command=self.on_step_to_event
+            toolbar, text="Hasta evento", style="Primary.TButton", command=self.on_step_to_event
         )
-        self.toolbar_buttons["step_event"].pack(side=tk.LEFT, padx=4)
+        self.toolbar_buttons["step_event"].pack(side=tk.LEFT, padx=6, pady=6)
 
         self.toolbar_buttons["finalize"] = ttk.Button(
-            toolbar, text="Finalizar", command=self.on_finalize
+            toolbar, text="Finalizar", style="Primary.TButton", command=self.on_finalize
         )
-        self.toolbar_buttons["finalize"].pack(side=tk.LEFT, padx=4)
+        self.toolbar_buttons["finalize"].pack(side=tk.LEFT, padx=6, pady=6)
 
     def _create_main_panel(self) -> None:
-        paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL, style="Main.TPanedwindow")
         paned.pack(fill=tk.BOTH, expand=True)
 
         # Panel izquierdo: snapshot
-        left_frame = ttk.Frame(paned, padding=8)
+        left_frame = ttk.Frame(paned, padding=12, style="Panel.TFrame")
         paned.add(left_frame, weight=3)
 
-        ttk.Label(left_frame, text="Instantánea del estado").pack(anchor=tk.W)
+        ttk.Label(left_frame, text="Instantánea del estado", style="SectionTitle.TLabel").pack(anchor=tk.W)
 
         snapshot_container = ttk.Frame(left_frame)
-        snapshot_container.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        snapshot_container.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+
 
         self.snapshot_text = tk.Text(
             snapshot_container,
             wrap=tk.NONE,
             font=("Consolas", 10),
             state=tk.DISABLED,
+
+            background=self.palette["surface"],
+            foreground=self.palette["text"],
+            insertbackground=self.palette["accent"],
+            relief=tk.FLAT,
+            padx=8,
+            pady=8,
+
         )
         self.snapshot_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(
-            snapshot_container, orient=tk.VERTICAL, command=self.snapshot_text.yview
+
+            snapshot_container,
+            orient=tk.VERTICAL,
+            command=self.snapshot_text.yview,
+            style="Snapshot.Vertical.TScrollbar",
+
         )
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.snapshot_text.configure(yscrollcommand=scrollbar.set)
 
         # Panel derecho: estado y métricas
-        right_frame = ttk.Frame(paned, padding=8)
+
+        right_frame = ttk.Frame(paned, padding=12, style="Panel.TFrame")
         paned.add(right_frame, weight=2)
 
-        estado_frame = ttk.LabelFrame(right_frame, text="Estado actual")
+        estado_frame = ttk.LabelFrame(right_frame, text="Estado actual", style="Card.TLabelframe")
         estado_frame.pack(fill=tk.X)
 
         self.tick_var = tk.StringVar(value="Tick: -")
-        ttk.Label(estado_frame, textvariable=self.tick_var).pack(anchor=tk.W, pady=2)
+        ttk.Label(estado_frame, textvariable=self.tick_var, style="Body.TLabel").pack(anchor=tk.W, pady=4, padx=8)
 
         self.cpu_var = tk.StringVar(value="CPU: (sin datos)")
-        ttk.Label(estado_frame, textvariable=self.cpu_var).pack(anchor=tk.W, pady=2)
+        ttk.Label(estado_frame, textvariable=self.cpu_var, style="Highlight.TLabel").pack(anchor=tk.W, pady=(0, 4), padx=8)
 
-        resumen_frame = ttk.LabelFrame(right_frame, text="Métricas finales")
+        resumen_frame = ttk.LabelFrame(right_frame, text="Métricas finales", style="Card.TLabelframe")
+
         resumen_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
         self.metrics_tree = ttk.Treeview(
@@ -165,6 +301,9 @@ class MemSimGUI(tk.Tk):
             ),
             show="headings",
             height=8,
+
+            style="Metrics.Treeview",
+
         )
         headings = {
             "pid": "PID",
@@ -182,28 +321,37 @@ class MemSimGUI(tk.Tk):
 
         self.metrics_tree.pack(fill=tk.BOTH, expand=True)
 
-        promedios_frame = ttk.Frame(resumen_frame)
+
+        promedios_frame = ttk.Frame(resumen_frame, style="Panel.TFrame")
         promedios_frame.pack(fill=tk.X, pady=(8, 0))
 
         self.avg_turnaround_var = tk.StringVar(value="Promedio retorno: -")
-        ttk.Label(promedios_frame, textvariable=self.avg_turnaround_var).pack(
-            anchor=tk.W
-        )
+        ttk.Label(promedios_frame, textvariable=self.avg_turnaround_var, style="Body.TLabel").pack(anchor=tk.W, pady=2)
 
         self.avg_wait_var = tk.StringVar(value="Promedio espera: -")
-        ttk.Label(promedios_frame, textvariable=self.avg_wait_var).pack(anchor=tk.W)
+        ttk.Label(promedios_frame, textvariable=self.avg_wait_var, style="Body.TLabel").pack(anchor=tk.W, pady=2)
 
         self.throughput_var = tk.StringVar(value="Productividad: -")
-        ttk.Label(promedios_frame, textvariable=self.throughput_var).pack(anchor=tk.W)
+        ttk.Label(promedios_frame, textvariable=self.throughput_var, style="Body.TLabel").pack(anchor=tk.W, pady=2)
 
         self.total_time_var = tk.StringVar(value="Tiempo total: -")
-        ttk.Label(promedios_frame, textvariable=self.total_time_var).pack(anchor=tk.W)
+        ttk.Label(promedios_frame, textvariable=self.total_time_var, style="Body.TLabel").pack(anchor=tk.W, pady=2)
 
     def _create_status_bar(self) -> None:
-        status_frame = ttk.Frame(self, relief=tk.SUNKEN, padding=(6, 4))
+        status_frame = tk.Frame(self, bg=self.palette["surface_alt"], relief=tk.FLAT)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM)
         self.status_var = tk.StringVar(value="")
-        ttk.Label(status_frame, textvariable=self.status_var).pack(anchor=tk.W)
+        tk.Label(
+            status_frame,
+            textvariable=self.status_var,
+            bg=self.palette["surface_alt"],
+            fg=self.palette["text"],
+            padx=12,
+            pady=4,
+            anchor="w",
+            font=("Segoe UI", 9),
+        ).pack(fill=tk.X)
+
 
     def _configure_shortcuts(self) -> None:
         self.bind("<Control-o>", lambda _: self.on_open_csv())
