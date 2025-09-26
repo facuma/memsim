@@ -1,8 +1,8 @@
 """
-Command-line interface for the memory simulation tool.
+Interfaz de línea de comandos para la herramienta de simulación de memoria.
 
-This module provides the CLI interface for running simulations,
-configuring parameters, and displaying results.
+Este módulo ofrece la interfaz CLI para ejecutar simulaciones, configurar
+parámetros y mostrar resultados.
 """
 
 import argparse
@@ -13,64 +13,70 @@ from .io import read_processes_csv
 
 def create_parser():
     """
-    Create the command-line argument parser.
-    
+    Crea el parser de argumentos de la línea de comandos.
+
     Returns:
-        argparse.ArgumentParser: Configured argument parser
+        argparse.ArgumentParser: Parser configurado.
     """
     parser = argparse.ArgumentParser(
-        description="Memory simulation tool for process scheduling and memory management",
+        description="Herramienta de simulación de memoria y planificación de procesos",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
+Ejemplos:
   python -m memsim --csv examples/processes_example.csv --tick-log events
   python -m memsim --csv data/processes.csv --tick-log ticks --no-header
         """
     )
-    
+
     parser.add_argument(
         "--csv",
         required=True,
-        help="Path to the CSV file containing process data (required)"
+        help="Ruta al archivo CSV con los procesos (obligatorio)"
     )
-    
+
     parser.add_argument(
         "--tick-log",
         choices=["none", "events", "ticks"],
         default="none",
-        help="Logging level: none (no intermediate state), events (arrivals/terminations), ticks (every tick) (default: none)"
+        help="Nivel de registro: none (sin estados), events (eventos), ticks (cada tick)"
     )
-    
+
     parser.add_argument(
         "--no-header",
         action="store_true",
-        help="Don't print column headers in output"
+        help="No imprimir encabezados en la salida"
     )
-    
+
     parser.add_argument(
         "--log-level",
         choices=["INFO", "DEBUG"],
         default="INFO",
-        help="Logging level: INFO (basic info) or DEBUG (detailed decisions) (default: INFO)"
+        help="Nivel de log: INFO (básico) o DEBUG (detallado)"
     )
-    
+
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Ejecuta la simulación en modo interactivo"
+    )
+
     return parser
 
 
 def print_process_table(processes, show_header=True):
     """
-    Print the process results table.
-    
+    Imprime la tabla de resultados por proceso.
+
     Args:
-        processes: List of process metrics dictionaries
-        show_header: Whether to print column headers
+        processes: Lista de métricas por proceso.
+        show_header: Si se deben imprimir encabezados.
     """
     if not processes:
-        print("No processes completed.")
+        print("No se completaron procesos.")
         return
-    
+
     if show_header:
-        print("\nProcess Results:")
+        print("\nResultados por proceso:")
         print("pid  arrival  burst  start_time  finish_time  turnaround  wait")
         print("---  -------  -----  ----------  -----------  ----------  ----")
     
@@ -80,36 +86,36 @@ def print_process_table(processes, show_header=True):
 
 def print_summary(avg_turnaround, avg_wait, throughput, tiempo_total, show_header=True):
     """
-    Print the summary statistics.
-    
+    Imprime las estadísticas de resumen.
+
     Args:
-        avg_turnaround: Average turnaround time
-        avg_wait: Average wait time
-        throughput: Throughput value
-        tiempo_total: Total simulation time
-        show_header: Whether to print section header
+        avg_turnaround: Tiempo promedio de turnaround.
+        avg_wait: Tiempo promedio de espera.
+        throughput: Valor de throughput.
+        tiempo_total: Tiempo total de simulación.
+        show_header: Si se imprime el encabezado de sección.
     """
     if show_header:
-        print("\nSummary:")
-    
-    print(f"Average Turnaround Time: {avg_turnaround:.2f}")
-    print(f"Average Wait Time: {avg_wait:.2f}")
-    print(f"Throughput: {throughput:.4f} processes/time unit")
-    print(f"Total Simulation Time: {tiempo_total}")
+        print("\nResumen:")
+
+    print(f"Tiempo promedio de turnaround: {avg_turnaround:.2f}")
+    print(f"Tiempo promedio de espera: {avg_wait:.2f}")
+    print(f"Throughput: {throughput:.4f} procesos/unidad de tiempo")
+    print(f"Tiempo total de simulación: {tiempo_total}")
 
 
 def should_log_tick(tick_log_mode, current_time, last_logged_time, events_occurred):
     """
-    Determine if we should log the current tick based on the logging mode.
-    
+    Determina si se debe registrar el tick actual según el modo elegido.
+
     Args:
-        tick_log_mode: Logging mode ("none", "events", "ticks")
-        current_time: Current simulation time
-        last_logged_time: Last time we logged
-        events_occurred: Whether events occurred this tick
-        
+        tick_log_mode: Modo de registro ("none", "events", "ticks").
+        current_time: Tiempo actual de la simulación.
+        last_logged_time: Último tiempo registrado.
+        events_occurred: Si ocurrieron eventos en el tick.
+
     Returns:
-        bool: True if we should log this tick
+        bool: True si corresponde registrar el tick.
     """
     if tick_log_mode == "none":
         return False
@@ -122,41 +128,77 @@ def should_log_tick(tick_log_mode, current_time, last_logged_time, events_occurr
 
 def main():
     """
-    Main entry point for the CLI application.
+    Punto de entrada principal de la aplicación CLI.
     """
     parser = create_parser()
     args = parser.parse_args()
-    
+
     try:
-        # Load processes from CSV
+        # Cargar procesos desde CSV
         processes = read_processes_csv(args.csv)
-        
+
         if not processes:
-            print("No processes loaded from CSV file.")
+            print("No se cargaron procesos desde el archivo CSV.")
             return 1
-        
-        # Run simulation
+
+        # Ejecutar simulación
         simulator = MemorySimulator(log_level=args.log_level)
-        results = simulator.run_simulation(processes)
-        
-        # Print intermediate states based on tick-log mode
-        if args.tick_log != "none":
+
+        if args.interactive:
+            simulator.initialize(processes)
+            print("Modo interactivo activado. Presiona Enter para avanzar un tick, 's' para saltar al siguiente evento o escribe 'q' para finalizar.")
+
+            while True:
+                if simulator.is_complete():
+                    print("La simulación ha finalizado.")
+                    break
+
+                user_input = input("Acción [Enter=1 tick, s=evento, q=salir]: ")
+                comando = user_input.strip().lower()
+                if comando in {"q", "quit", "exit"}:
+                    print("Finalizando modo interactivo. Ejecutando los ticks restantes automáticamente...")
+                    break
+
+                if comando == "s":
+                    tick_info = simulator.step_hasta_evento()
+                    if tick_info is None:
+                        print("La simulación ha finalizado.")
+                        break
+
+                    print(f"\n--- Tick {tick_info['time']} (saltados {tick_info.get('ticks_agregados', 1) - 1}) ---")
+                    print(tick_info['snapshot'])
+                    continue
+
+                tick_info = simulator.step()
+                if tick_info is None:
+                    print("La simulación ha finalizado.")
+                    break
+
+                print(f"\n--- Tick {tick_info['time']} ---")
+                print(tick_info['snapshot'])
+
+            results = simulator.finalize()
+        else:
+            results = simulator.run_simulation(processes)
+
+        # Mostrar estados intermedios según tick-log (reproducción no interactiva)
+        if not args.interactive and args.tick_log != "none":
             last_logged_time = -1
-            
+
             for i, log_entry in enumerate(results['simulation_log']):
                 current_time = i
                 events_occurred = False
-                
-                # Check if events occurred (simplified check)
+
+                # Verificar si ocurrieron eventos (revisión simple)
                 if "CPU: pid=" in log_entry or "CPU: IDLE" in log_entry:
                     events_occurred = True
-                
+
                 if should_log_tick(args.tick_log, current_time, last_logged_time, events_occurred):
                     print(f"\n--- Tick {current_time} ---")
                     print(log_entry)
                     last_logged_time = current_time
-        
-        # Print final results
+
+        # Mostrar resultados finales
         print_process_table(results['processes'], not args.no_header)
         print_summary(
             results['avg_turnaround'],
@@ -165,9 +207,9 @@ def main():
             results['tiempo_total'],
             not args.no_header
         )
-        
+
         return 0
-        
+
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
@@ -175,7 +217,7 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
+        print(f"Error inesperado: {e}", file=sys.stderr)
         return 1
 
 
