@@ -1,8 +1,8 @@
 """
-Main simulation engine and coordination.
+Motor principal de la simulación y coordinación de componentes.
 
-This module orchestrates the memory simulation by coordinating between
-memory management, process scheduling, and I/O operations.
+Este módulo orquesta la simulación de memoria coordinando la gestión de
+memoria, la planificación de procesos y la visualización del estado.
 """
 
 import csv
@@ -17,19 +17,20 @@ from .io import pretty_print_state
 
 class MemorySimulator:
     """
-    Main simulation engine for memory management.
-    
-    This class coordinates the entire simulation process, managing the
-    interaction between memory allocation, process scheduling, and system events.
+    Motor principal de la simulación de administración de memoria.
+
+    Esta clase coordina toda la simulación, gestionando la interacción entre la
+    asignación de memoria, la planificación de procesos y los eventos del
+    sistema.
     """
     
     def __init__(self, debug_mode: bool = False, log_level: str = "INFO"):
         """
-        Initialize the simulator with memory manager and scheduler.
-        
+        Inicializa el simulador con el administrador de memoria y el planificador.
+
         Args:
-            debug_mode: Enable invariant validation and debug assertions
-            log_level: Logging level ("INFO" or "DEBUG")
+            debug_mode: Activa validaciones adicionales de invariantes.
+            log_level: Nivel de bitácora ("INFO" o "DEBUG").
         """
         self.memory_manager = MemoryManager()
         self.scheduler = Scheduler()
@@ -38,93 +39,171 @@ class MemorySimulator:
         self.current_time = 0
         self.max_multiprogramming = 5
         self.debug_mode = debug_mode
+        self.simulation_log: List[str] = []
+        self._simulation_complete = False
+        self._summary_cache: Optional[Dict] = None
         
-        # Setup logger
+        # Configurar logger
         self.logger = logging.getLogger('memsim')
         self.logger.setLevel(getattr(logging, log_level.upper()))
-        
-        # Create console handler if not already exists
+
+        # Crear un handler de consola si aún no existe
         if not self.logger.handlers:
             handler = logging.StreamHandler()
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
     
-    def run_simulation(self, processes: List[Process]) -> Dict:
-        """
-        Run the complete memory simulation.
-        
-        Args:
-            processes: List of Process objects to simulate
-            
-        Returns:
-            dict: Simulation results and metrics
-        """
-        # Initialize simulation state
+    def initialize(self, processes: List[Process]):
+        """Inicializa el estado interno para una nueva ejecución."""
         self.arrivals = sorted(processes, key=lambda p: (p.arrival, p.pid))
         self.terminated = []
         self.current_time = 0
         self.scheduler = Scheduler()
         self.memory_manager = MemoryManager()
-        
-        # Simulation log for debugging
-        simulation_log = []
-        
-        # Main simulation loop
-        while self._has_pending_processes():
-            # 1) Handle arrivals at current time
-            self._handle_arrivals()
-            
-            # 2) SRTF Scheduling
-            self._schedule_srtf()
-            
-            # 3) Execute 1 tick
-            self._execute_tick()
-            
-            # 4) Handle process termination
-            self._handle_termination()
-            
-            # 5) Handle desuspension
-            self._handle_desuspension()
-            
-            # 6) Validate invariants (debug mode)
-            self._validate_invariants()
-            
-            # 7) Collect state snapshot for logging
-            state_snapshot = self._collect_state_snapshot()
-            simulation_log.append(state_snapshot)
-            
-            # 8) Increment time
-            self.current_time += 1
-        
-        # Calculate final metrics
-        summary = self._calculate_metrics()
-        summary['simulation_log'] = simulation_log
-        
-        # Export CSV report
-        self._export_csv_report(summary)
-        
-        return summary
+        self.simulation_log = []
+        self._simulation_complete = False
+        self._summary_cache = None
+
+    def run_simulation(self, processes: List[Process]) -> Dict:
+        """
+        Ejecuta la simulación completa de memoria.
+
+        Args:
+            processes: Lista de procesos a simular.
+
+        Returns:
+            dict: Resultados y métricas de la simulación.
+        """
+        self.initialize(processes)
+
+        # Bucle principal de simulación
+        while self.step() is not None:
+            pass
+
+        return self.finalize()
+
+    def is_complete(self) -> bool:
+        """Devuelve True cuando no quedan ticks por ejecutar."""
+        if self._simulation_complete:
+            return True
+        return not self._has_pending_processes()
+
+    def step(self) -> Optional[Dict[str, object]]:
+        """Ejecuta un único tick de la simulación.
+
+        Returns:
+            Optional[Dict[str, object]]: Información del tick ejecutado o None
+            si la simulación ya finalizó.
+        """
+        if self._simulation_complete:
+            return None
+
+        if not self._has_pending_processes():
+            self._simulation_complete = True
+            return None
+
+        eventos_registrados = False
+
+        # 1) Llegadas en el tiempo actual
+        if self._handle_arrivals():
+            eventos_registrados = True
+
+        # 2) Planificación SRTF
+        if self._schedule_srtf():
+            eventos_registrados = True
+
+        # 3) Ejecutar un tick
+        if self._execute_tick():
+            eventos_registrados = True
+
+        # 4) Manejar terminaciones
+        if self._handle_termination():
+            eventos_registrados = True
+
+        # 5) Manejar desuspensiones
+        if self._handle_desuspension():
+            eventos_registrados = True
+
+        # 6) Validar invariantes (modo debug)
+        self._validate_invariants()
+
+        # 7) Capturar instantánea del estado para bitácora
+        state_snapshot = self._collect_state_snapshot()
+        self.simulation_log.append(state_snapshot)
+
+        tick_info: Dict[str, object] = {
+            'time': self.current_time,
+            'snapshot': state_snapshot,
+            'running_pid': self.scheduler.running.pid if self.scheduler.running else None,
+            'ready_count': len(self.scheduler.ready_heap),
+            'suspended_count': len(self.scheduler.ready_susp),
+            'evento': eventos_registrados,
+        }
+
+        # 8) Incrementar tiempo
+        self.current_time += 1
+
+        return tick_info
+
+    def step_hasta_evento(self) -> Optional[Dict[str, object]]:
+        """Avanza la simulación hasta el siguiente tick con actividad relevante."""
+        if self._simulation_complete:
+            return None
+
+        ticks_ejecutados = 0
+        resultado_final: Optional[Dict[str, object]] = None
+
+        while True:
+            info_tick = self.step()
+            if info_tick is None:
+                return resultado_final
+
+            ticks_ejecutados += 1
+            resultado_final = info_tick
+
+            if info_tick.get('evento', False):
+                resultado_final = dict(info_tick)
+                resultado_final['ticks_agregados'] = ticks_ejecutados
+                return resultado_final
+
+    def finalize(self) -> Dict:
+        """Finaliza la simulación y devuelve las métricas de resumen."""
+        if not self._simulation_complete and self._has_pending_processes():
+            while self.step() is not None:
+                pass
+
+        if not self._simulation_complete and not self._has_pending_processes():
+            self._simulation_complete = True
+
+        if self._summary_cache is None:
+            summary = self._calculate_metrics()
+            summary['simulation_log'] = self.simulation_log
+            self._export_csv_report(summary)
+            self._summary_cache = summary
+
+        return self._summary_cache
     
     def _has_pending_processes(self) -> bool:
-        """Check if there are still processes to process."""
+        """Verifica si aún quedan procesos por atender."""
         return (len(self.arrivals) > 0 or 
                 len(self.scheduler.ready_heap) > 0 or 
                 len(self.scheduler.ready_susp) > 0 or 
                 self.scheduler.running is not None)
     
-    def _handle_arrivals(self):
-        """Handle process arrivals at current time."""
+    def _handle_arrivals(self) -> bool:
+        """Gestiona las llegadas de procesos en el instante actual."""
+        eventos = False
         arriving_processes = []
         
-        # Find all processes arriving at current time
+        # Buscar procesos que llegan en el tiempo actual
         while self.arrivals and self.arrivals[0].arrival == self.current_time:
             arriving_processes.append(self.arrivals.pop(0))
-        
-        # Try to admit each arriving process
+
+        # Intentar admitir cada proceso entrante
         for process in arriving_processes:
             if self.scheduler.count_in_memory() < self.max_multiprogramming:
-                # Try to allocate memory with Best-Fit
+                # Intentar asignar memoria con Best-Fit
                 partition = self.memory_manager.best_fit(process.size)
                 if partition is not None:
                     self.memory_manager.assign(partition, process.pid)
@@ -132,16 +211,22 @@ class MemorySimulator:
                         process.remaining = process.burst
                     process.state = State.READY
                     self.scheduler.push_ready(process)
+                    eventos = True
                 else:
                     process.state = State.READY_SUSP
                     self.scheduler.enqueue_suspended(process)
+                    eventos = True
             else:
-                # Memory full, add to suspended queue
+                # Memoria llena, enviar a suspendidos
                 self.scheduler.enqueue_suspended(process)
-                self.logger.debug(f"Process {process.pid} suspended - memory full (degree={self.scheduler.count_in_memory()})")
-    
-    def _schedule_srtf(self):
-        """Handle SRTF scheduling with preemption."""
+                eventos = True
+                self.logger.debug(f"Proceso {process.pid} suspendido - memoria llena (grado={self.scheduler.count_in_memory()})")
+
+        return eventos
+
+    def _schedule_srtf(self) -> bool:
+        """Gestiona la planificación SRTF con desalojo."""
+        hubo_cambio = False
         if self.scheduler.running is None:
             if self.scheduler.ready_heap:
                 process = self.scheduler.pop_ready_min()
@@ -149,6 +234,7 @@ class MemorySimulator:
                 if process.start_time is None:
                     process.start_time = self.current_time
                 process.state = State.RUNNING
+                hubo_cambio = True
         else:
             if self.scheduler.ready_heap:
                 min_ready = self.scheduler.peek_ready_min()
@@ -162,37 +248,46 @@ class MemorySimulator:
                     if new_process.start_time is None:
                         new_process.start_time = self.current_time
                     new_process.state = State.RUNNING
+                    hubo_cambio = True
 
-    def _execute_tick(self):
-        """Execute one time tick."""
+        return hubo_cambio
+
+    def _execute_tick(self) -> bool:
+        """Ejecuta un intervalo de tiempo."""
         if self.scheduler.running is not None:
             self.scheduler.running.remaining = max(0, self.scheduler.running.remaining - 1)
-    
-    def _handle_termination(self):
-        """Handle process termination."""
-        if (self.scheduler.running is not None and 
+            return True
+        return False
+
+    def _handle_termination(self) -> bool:
+        """Gestiona la terminación de procesos."""
+        if (self.scheduler.running is not None and
             self.scheduler.running.remaining <= 0):
-            # Process finished
+            # Proceso finalizado
             finished_process = self.scheduler.running
             finished_process.finish_time = self.current_time + 1
             finished_process.state = State.TERMINATED
-            
-            # Release memory partition
+
+            # Liberar partición de memoria
             self.memory_manager.release(finished_process.pid)
-            self.logger.debug(f"Process {finished_process.pid} terminated, partition released")
-            
-            # Move to terminated list
+            self.logger.debug(f"Proceso {finished_process.pid} terminado, partición liberada")
+
+            # Mover a la lista de terminados
             self.terminated.append(finished_process)
             self.scheduler.running = None
-    
-    def _handle_desuspension(self):
-        """Handle desuspension of suspended processes."""
-        while (self.scheduler.ready_susp and 
+            return True
+
+        return False
+
+    def _handle_desuspension(self) -> bool:
+        """Gestiona la desuspensión de procesos suspendidos."""
+        hubo_cambio = False
+        while (self.scheduler.ready_susp and
                self.scheduler.count_in_memory() < self.max_multiprogramming):
-            # Take front of suspended queue
+            # Tomar el primero de la cola de suspendidos
             process = self.scheduler.dequeue_suspended()
-            
-            # Try to allocate memory with Best-Fit
+
+            # Intentar asignar memoria con Best-Fit
             partition = self.memory_manager.best_fit(process.size)
             if partition is not None:
                 self.memory_manager.assign(partition, process.pid)
@@ -200,27 +295,30 @@ class MemorySimulator:
                     process.remaining = process.burst
                 process.state = State.READY
                 self.scheduler.push_ready(process)
+                hubo_cambio = True
             else:
                 self.scheduler.ready_susp.appendleft(process)
                 break
+
+        return hubo_cambio
     
     def _collect_state_snapshot(self) -> str:
         """Collect current state snapshot for logging."""
-        # Get memory table
+        # Tabla de memoria
         process_sizes = {p.pid: p.size for p in self.terminated}
         if self.scheduler.running:
             process_sizes[self.scheduler.running.pid] = self.scheduler.running.size
-        
-        # Add ready processes
+
+        # Agregar procesos listos
         for _, _, _, process in self.scheduler.ready_heap:
             process_sizes[process.pid] = process.size
-        
+
         mem_table = self.memory_manager.table_snapshot(process_sizes)
-        
-        # Get ready processes list
+
+        # Listado de procesos listos
         ready_processes = [process for _, _, _, process in self.scheduler.ready_heap]
-        
-        # Get suspended processes list
+
+        # Listado de procesos suspendidos
         suspended_processes = list(self.scheduler.ready_susp)
         
         return pretty_print_state(
@@ -242,13 +340,13 @@ class MemorySimulator:
                 'tiempo_total': self.current_time
             }
         
-        # Calculate per-process metrics
+        # Calcular métricas por proceso
         process_metrics = []
         total_turnaround = 0
         total_wait = 0
-        
+
         for process in self.terminated:
-            # Precise calculations
+            # Cálculos precisos
             turnaround = process.finish_time - process.arrival
             wait = turnaround - process.burst
             
@@ -266,12 +364,12 @@ class MemorySimulator:
             total_turnaround += turnaround
             total_wait += wait
         
-        # Calculate averages
+        # Calcular promedios
         num_processes = len(self.terminated)
         avg_turnaround = total_turnaround / num_processes if num_processes > 0 else 0.0
         avg_wait = total_wait / num_processes if num_processes > 0 else 0.0
-        
-        # Defensive throughput calculation
+
+        # Cálculo defensivo del throughput
         if self.current_time == 0:
             throughput_value = 0.0
         else:
@@ -287,73 +385,73 @@ class MemorySimulator:
     
     def _validate_invariants(self):
         """
-        Validate simulation invariants in debug mode.
-        
+        Valida las invariantes de la simulación en modo debug.
+
         Raises:
-            AssertionError: If any invariant is violated
+            AssertionError: Si alguna invariante es violada.
         """
         if not self.debug_mode:
             return
-        
-        # Invariant 1: Multiprogramming degree <= 5
+
+        # Invariante 1: Grado de multiprogramación <= 5
         current_count = self.scheduler.count_in_memory()
-        assert current_count <= 5, f"Multiprogramming degree exceeded: {current_count} > 5"
-        
-        # Invariant 2: No duplicate PIDs in partitions
+        assert current_count <= 5, f"Se excedió el grado de multiprogramación: {current_count} > 5 (Multiprogramming degree exceeded)"
+
+        # Invariante 2: No hay PIDs duplicados en particiones
         assigned_pids = set()
         for partition in self.memory_manager.partitions:
             if partition.pid_assigned is not None:
-                assert partition.pid_assigned not in assigned_pids, f"Duplicate PID {partition.pid_assigned} in partitions"
+                assert partition.pid_assigned not in assigned_pids, f"PID duplicado {partition.pid_assigned} en particiones (Duplicate PID {partition.pid_assigned} in partitions)"
                 assigned_pids.add(partition.pid_assigned)
-        
-        # Invariant 3: Each process is in exactly one container
+
+        # Invariante 3: Cada proceso está en exactamente una estructura
         all_processes = set()
-        
-        # Check arrivals
+
+        # Revisar llegadas
         for process in self.arrivals:
-            assert process.pid not in all_processes, f"Process {process.pid} found in multiple containers (arrivals)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (arrivals)"
             all_processes.add(process.pid)
-        
-        # Check ready queue
+
+        # Revisar cola de listos
         for _, _, _, process in self.scheduler.ready_heap:
-            assert process.pid not in all_processes, f"Process {process.pid} found in multiple containers (ready)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (ready)"
             all_processes.add(process.pid)
-        
-        # Check suspended queue
+
+        # Revisar cola de suspendidos
         for process in self.scheduler.ready_susp:
-            assert process.pid not in all_processes, f"Process {process.pid} found in multiple containers (ready_susp)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (ready_susp)"
             all_processes.add(process.pid)
-        
-        # Check running
+
+        # Revisar proceso en ejecución
         if self.scheduler.running is not None:
-            assert self.scheduler.running.pid not in all_processes, f"Process {self.scheduler.running.pid} found in multiple containers (running)"
+            assert self.scheduler.running.pid not in all_processes, f"Proceso {self.scheduler.running.pid} encontrado en múltiples estructuras (running)"
             all_processes.add(self.scheduler.running.pid)
-        
-        # Check terminated
+
+        # Revisar terminados
         for process in self.terminated:
-            assert process.pid not in all_processes, f"Process {process.pid} found in multiple containers (terminated)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (terminated)"
             all_processes.add(process.pid)
-    
+
     def _export_csv_report(self, summary: Dict):
         """
-        Export simulation metrics to CSV file.
-        
+        Exporta las métricas de la simulación a un archivo CSV.
+
         Args:
-            summary: Simulation results dictionary
+            summary: Diccionario con los resultados de la simulación.
         """
         csv_path = os.path.join(os.getcwd(), "simulation_report.csv")
-        
+
         try:
             with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
-                
-                # Write header
+
+                # Escribir encabezado
                 writer.writerow([
-                    'pid', 'arrival', 'burst', 'start_time', 'finish_time', 
+                    'pid', 'arrival', 'burst', 'start_time', 'finish_time',
                     'turnaround', 'wait', 'size'
                 ])
-                
-                # Write process data
+
+                # Escribir datos de procesos
                 for process_metrics in summary['processes']:
                     writer.writerow([
                         process_metrics['pid'],
@@ -365,42 +463,42 @@ class MemorySimulator:
                         process_metrics['wait'],
                         process_metrics.get('size', 'N/A')
                     ])
-                
-                # Write summary row
-                writer.writerow([])  # Empty row
-                writer.writerow(['SUMMARY', '', '', '', '', '', '', ''])
-                writer.writerow(['avg_turnaround', summary['avg_turnaround']])
-                writer.writerow(['avg_wait', summary['avg_wait']])
-                writer.writerow(['throughput', summary['throughput']])
-                writer.writerow(['tiempo_total', summary['tiempo_total']])
-                
+
+                # Escribir resumen
+                writer.writerow([])  # Fila vacía
+                writer.writerow(['RESUMEN / SUMMARY', '', '', '', '', '', '', ''])
+                writer.writerow(['avg_turnaround', summary['avg_turnaround'], 'promedio_turnaround'])
+                writer.writerow(['avg_wait', summary['avg_wait'], 'promedio_espera'])
+                writer.writerow(['throughput', summary['throughput'], 'procesos/unidad'])
+                writer.writerow(['tiempo_total', summary['tiempo_total'], 'duración_simulación'])
+
         except Exception as e:
-            # Don't fail simulation if CSV export fails
-            print(f"Warning: Failed to export CSV report: {e}")
+            # No fallar la simulación si la exportación falla
+            print(f"Advertencia: Error al exportar el reporte CSV: {e}")
             import traceback
             traceback.print_exc()
 
 
 class SimulationConfig:
     """
-    Configuration settings for the simulation.
-    
-    This class holds all configuration parameters needed to run
-    the simulation, including memory size, scheduling algorithm, etc.
+    Configuración de la simulación.
+
+    Esta clase podría almacenar parámetros como tamaño de memoria o algoritmo
+    de planificación.
     """
     pass
 
 
 def run_simulation(config, processes):
     """
-    Run the complete memory simulation.
-    
+    Ejecuta la simulación completa de memoria.
+
     Args:
-        config: SimulationConfig object with simulation parameters
-        processes: List of Process objects to simulate
-        
+        config: Objeto SimulationConfig con parámetros de simulación.
+        processes: Lista de procesos a simular.
+
     Returns:
-        dict: Simulation results and metrics
+        dict: Resultados y métricas de la simulación.
     """
     simulator = MemorySimulator()
     return simulator.run_simulation(processes)
@@ -408,12 +506,12 @@ def run_simulation(config, processes):
 
 def generate_report(results):
     """
-    Generate a detailed simulation report.
-    
+    Genera un reporte detallado de la simulación.
+
     Args:
-        results: Dictionary containing simulation results
-        
+        results: Diccionario con los resultados de la simulación.
+
     Returns:
-        str: Formatted simulation report
+        str: Reporte formateado.
     """
     pass
