@@ -1,11 +1,9 @@
 """
-Process scheduling algorithms and management.
+Algoritmos y gestión de la planificación de procesos.
 
-This module implements various CPU scheduling algorithms such as:
-- First Come First Served (FCFS)
-- Shortest Job First (SJF)
-- Round Robin (RR)
-- Priority Scheduling
+Este módulo implementa la lógica del planificador de CPU, incluyendo la gestión
+de las colas de procesos (listos, suspendidos) y la selección del siguiente
+proceso a ejecutar bajo un esquema SRTF (Shortest Remaining Time First).
 """
 
 import heapq
@@ -16,15 +14,15 @@ from .models import Process
 
 class Scheduler:
     """
-    Manages process scheduling using priority queues and FIFO queues.
+    Gestiona la planificación de procesos usando colas de prioridad y colas FIFO.
     
-    Uses heapq for ready queue (priority by remaining time) and collections.deque
-    for ready_susp queue (FIFO). Implements preemptive scheduling based on
-    remaining burst time.
+    Utiliza `heapq` para la cola de listos (prioridad por tiempo restante) y
+    `collections.deque` para la cola de suspendidos (FIFO). Implementa la
+    planificación apropiativa basada en el tiempo de ráfaga restante.
     """
     
     def __init__(self):
-        """Initialize the scheduler with empty queues."""
+        """Inicializa el planificador con las colas vacías."""
         self.ready_heap: List[Tuple[int, int, int, Process]] = []  # (remaining, tiebreak, pid, Process)
         self.ready_susp: deque = deque()  # FIFO queue for suspended processes
         self.running: Optional[Process] = None
@@ -32,22 +30,22 @@ class Scheduler:
     
     def push_ready(self, proc: Process) -> None:
         """
-        Insert a process into the ready queue with priority based on remaining time.
+        Inserta un proceso en la cola de listos con prioridad por tiempo restante.
         
         Args:
-            proc: Process to insert into ready queue
+            proc: Proceso a insertar en la cola de listos.
         """
-        # Use negative remaining time for min-heap behavior (smallest remaining first)
-        # Tiebreak ensures FIFO order for processes with same remaining time
+        # El contador de desempate (tiebreak) asegura un orden FIFO para
+        # procesos con el mismo tiempo restante.
         heapq.heappush(self.ready_heap, (proc.remaining, self.tiebreak_counter, proc.pid, proc))
         self.tiebreak_counter += 1
     
     def pop_ready_min(self) -> Optional[Process]:
         """
-        Remove and return the process with minimum remaining time from ready queue.
+        Extrae y devuelve el proceso con el menor tiempo restante de la cola de listos.
         
         Returns:
-            Process: Process with minimum remaining time, or None if queue is empty
+            Proceso con el menor tiempo restante, o None si la cola está vacía.
         """
         if not self.ready_heap:
             return None
@@ -57,10 +55,10 @@ class Scheduler:
     
     def peek_ready_min(self) -> Optional[Process]:
         """
-        Return the process with minimum remaining time without removing it.
+        Devuelve el proceso con el menor tiempo restante sin extraerlo de la cola.
         
         Returns:
-            Process: Process with minimum remaining time, or None if queue is empty
+            Proceso con el menor tiempo restante, o None si la cola está vacía.
         """
         if not self.ready_heap:
             return None
@@ -70,19 +68,19 @@ class Scheduler:
     
     def enqueue_suspended(self, proc: Process) -> None:
         """
-        Add a process to the suspended ready queue (FIFO).
+        Añade un proceso a la cola de listos/suspendidos (FIFO).
         
         Args:
-            proc: Process to add to suspended queue
+            proc: Proceso a añadir a la cola de suspendidos.
         """
         self.ready_susp.append(proc)
     
     def dequeue_suspended(self) -> Optional[Process]:
         """
-        Remove and return the first process from suspended ready queue (FIFO).
+        Extrae y devuelve el primer proceso de la cola de suspendidos (FIFO).
         
         Returns:
-            Process: First process in suspended queue, or None if queue is empty
+            El primer proceso en la cola de suspendidos, o None si está vacía.
         """
         if not self.ready_susp:
             return None
@@ -91,72 +89,28 @@ class Scheduler:
     
     def preempt_if_needed(self, incoming_min_remaining: int) -> bool:
         """
-        Check if current running process should be preempted.
+        Comprueba si el proceso en ejecución actual debe ser desalojado (preempted).
         
         Args:
-            incoming_min_remaining: Minimum remaining time of incoming processes
+            incoming_min_remaining: Tiempo restante mínimo de los procesos entrantes.
             
         Returns:
-            bool: True if running process should be preempted, False otherwise
+            True si el proceso en ejecución debe ser desalojado, False en caso contrario.
         """
         if self.running is None:
             return False
         
-        # Preempt if incoming process has less remaining time
+        # Se desaloja si un proceso entrante tiene menor tiempo restante.
         return incoming_min_remaining < self.running.remaining
     
     def count_in_memory(self) -> int:
         """
-        Count total processes currently in memory (ready + running).
+        Calcula el grado de multiprogramación del sistema.
+
+        Esto incluye procesos en estado Listo (en memoria), Ejecución (en CPU)
+        y Listo/Suspendido (en disco, esperando por memoria).
         
         Returns:
-            int: Number of processes in memory
+            int: Grado de multiprogramación.
         """
-        return len(self.ready_heap) + (1 if self.running is not None else 0)
-
-
-class ProcessScheduler:
-    """
-    Manages process scheduling and CPU allocation.
-    
-    This class implements different scheduling algorithms and manages
-    the ready queue and process execution order.
-    """
-    pass
-
-
-class ReadyQueue:
-    """
-    Manages the ready queue of processes waiting for CPU.
-    
-    This class handles the insertion, removal, and ordering of processes
-    based on the scheduling algorithm being used.
-    """
-    pass
-
-
-def schedule_processes(processes, algorithm="fcfs"):
-    """
-    Schedule a list of processes using the specified algorithm.
-    
-    Args:
-        processes: List of Process objects to schedule
-        algorithm: Scheduling algorithm to use
-        
-    Returns:
-        list: Ordered list of processes for execution
-    """
-    pass
-
-
-def calculate_metrics(processes):
-    """
-    Calculate scheduling metrics for the processes.
-    
-    Args:
-        processes: List of scheduled processes
-        
-    Returns:
-        dict: Dictionary containing average waiting time, turnaround time, etc.
-    """
-    pass
+        return len(self.ready_heap) + len(self.ready_susp) + (1 if self.running is not None else 0)

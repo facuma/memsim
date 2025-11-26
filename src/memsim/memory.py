@@ -1,13 +1,10 @@
 """
-Memory management operations and algorithms.
+Operaciones y algoritmos de gestión de memoria.
 
-This module implements various memory allocation strategies such as:
-- First Fit
-- Best Fit
-- Worst Fit
-- Next Fit
-
-It also handles memory fragmentation and compaction.
+Este módulo implementa la estrategia de asignación de memoria Best-Fit sobre
+un esquema de particionamiento fijo. También se encarga de la liberación de
+memoria y del cálculo de la fragmentación interna para la visualización
+del estado.
 """
 
 from typing import Optional, Dict, List
@@ -16,7 +13,7 @@ from .models import Partition
 
 class MemoryManager:
     """
-    Manages memory allocation and deallocation using different strategies.
+    Gestiona la asignación y liberación de memoria usando particionamiento fijo.
     
     This class manages three partitions (excluding OS reserved space):
     - P1: start=100, size=250
@@ -24,10 +21,11 @@ class MemoryManager:
     - P3: start=500, size=50
     
     Invariant: Each partition contains 0 or 1 process; OS 100K is reserved and outside these partitions.
+    Invariante: Cada partición contiene 0 o 1 proceso. El S.O. ocupa 100K que están fuera de estas particiones.
     """
     
     def __init__(self):
-        """Initialize MemoryManager with three partitions."""
+        """Inicializa el gestor de memoria con tres particiones fijas."""
         self.partitions = [
             Partition(id="P1", start=100, size=250),
             Partition(id="P2", start=350, size=150),
@@ -36,51 +34,47 @@ class MemoryManager:
     
     def best_fit(self, size: int) -> Optional[Partition]:
         """
-        Find the smallest free partition that can accommodate the given size.
+        Encuentra la partición libre más pequeña que pueda alojar el tamaño dado.
         
         Args:
-            size: Size of memory required by the process
+            size: Tamaño de memoria requerido por el proceso.
             
         Returns:
-            Partition: The smallest free partition with size >= required size.
-            If none are large enough but some partitions are already occupied,
-            the largest remaining free partition is returned so callers can
-            decide how to handle the insufficient space. Returns None only
-            when there are no free partitions or the memory is completely free
-            but lacks a large enough block.
+            La partición más pequeña y adecuada. Devuelve None si ninguna partición
+            libre es lo suficientemente grande.
         """
         free_partitions = [p for p in self.partitions if p.is_free]
         suitable_partitions = [p for p in free_partitions if p.size >= size]
 
         if suitable_partitions:
-            # Return the partition with the smallest size among suitable ones
+            # Devuelve la partición con el menor tamaño entre las adecuadas.
             return min(suitable_partitions, key=lambda p: p.size)
 
         if free_partitions and len(free_partitions) < len(self.partitions):
-            # All free partitions are too small, but some memory is occupied.
-            # Return the largest free partition so the caller can handle the
-            # allocation decision (e.g., suspension) while still exposing the
-            # "best" available option.
+            # Todas las particiones libres son demasiado pequeñas, pero algo de memoria
+            # está ocupada. Se podría devolver la más grande de las libres para que
+            # el llamador decida (ej. suspender), pero para Best-Fit estricto,
+            # si no cabe, no hay candidato.
             return max(free_partitions, key=lambda p: p.size)
 
         return None
     
     def assign(self, part: Partition, pid: int) -> None:
         """
-        Assign a partition to a process.
+        Asigna una partición a un proceso.
         
         Args:
-            part: The partition to assign
-            pid: Process ID to assign to the partition
+            part: La partición a asignar.
+            pid: ID del proceso a asignar a la partición.
         """
         part.pid_assigned = pid
     
     def release(self, pid: int) -> None:
         """
-        Release the partition assigned to the given process ID.
+        Libera la partición asignada al ID de proceso dado.
         
         Args:
-            pid: Process ID whose partition should be released
+            pid: ID del proceso cuya partición debe ser liberada.
         """
         for partition in self.partitions:
             if partition.pid_assigned == pid:
@@ -89,14 +83,14 @@ class MemoryManager:
     
     def table_snapshot(self, process_sizes: Dict[int, int]) -> List[Dict]:
         """
-        Generate a snapshot of the memory table for display.
+        Genera una instantánea de la tabla de memoria para su visualización.
         
         Args:
-            process_sizes: Dictionary mapping process IDs to their sizes
+            process_sizes: Diccionario que mapea IDs de procesos a sus tamaños.
             
         Returns:
-            List[Dict]: List of dictionaries containing partition information
-                      with keys: {id, start, size, pid, frag_interna}
+            Lista de diccionarios con información de cada partición, incluyendo
+            las claves: {id, start, size, pid, frag_interna}.
         """
         snapshot = []
         
@@ -105,10 +99,10 @@ class MemoryManager:
             frag_interna = 0
             
             if pid is not None and pid in process_sizes:
-                # Calculate internal fragmentation ensuring it is never negative
+                # Calcula la fragmentación interna, asegurando que no sea negativa.
                 frag_interna = partition.frag_interna(process_sizes[pid])
             elif pid is not None:
-                # If process size not found, assume no fragmentation
+                # Si no se encuentra el tamaño del proceso, se asume sin fragmentación.
                 frag_interna = 0
             
             snapshot.append({
@@ -121,40 +115,3 @@ class MemoryManager:
             })
         
         return snapshot
-
-
-class MemoryCompactor:
-    """
-    Handles memory compaction to reduce fragmentation.
-    
-    This class manages the compaction of memory blocks to minimize
-    external fragmentation.
-    """
-    pass
-
-
-def allocate_memory(process, strategy="first_fit"):
-    """
-    Allocate memory for a process using the specified strategy.
-    
-    Args:
-        process: Process object requiring memory
-        strategy: Allocation strategy to use
-        
-    Returns:
-        bool: True if allocation successful, False otherwise
-    """
-    pass
-
-
-def deallocate_memory(process_id):
-    """
-    Deallocate memory for a process.
-    
-    Args:
-        process_id: ID of the process to deallocate
-        
-    Returns:
-        bool: True if deallocation successful, False otherwise
-    """
-    pass

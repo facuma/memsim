@@ -148,6 +148,9 @@ class MemSimGUI(tk.Tk):
         self.cpu_var = tk.StringVar(value="CPU: (sin datos)")
         ttk.Label(estado_frame, textvariable=self.cpu_var).pack(anchor=tk.W, pady=2)
 
+        self.multiprogramming_var = tk.StringVar(value="Grado multiprog.: -")
+        ttk.Label(estado_frame, textvariable=self.multiprogramming_var).pack(anchor=tk.W, pady=2)
+
         resumen_frame = ttk.LabelFrame(right_frame, text="Métricas finales")
         resumen_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
@@ -258,7 +261,7 @@ class MemSimGUI(tk.Tk):
 
         snapshot = self._collect_snapshot()
         self._set_snapshot(snapshot)
-        self._update_state_panel(tick=0, running_pid=None)
+        self._update_state_panel(tick=0, running_pid=None, multiprogramming=0)
         self._clear_metrics()
 
         self._set_status("Simulador inicializado. Utilice Paso o Hasta evento.")
@@ -330,8 +333,10 @@ class MemSimGUI(tk.Tk):
         if log:
             ultimo_tick = len(log) - 1
             self._set_snapshot(log[-1])
+            # Recalcular el estado final para el panel
             running_pid = self.simulator.scheduler.running.pid if self.simulator.scheduler.running else None
-            self._update_state_panel(tick=ultimo_tick, running_pid=running_pid)
+            multiprogramming = self.simulator.scheduler.count_in_memory()
+            self._update_state_panel(tick=ultimo_tick, running_pid=running_pid, multiprogramming=multiprogramming)
         else:
             self._update_state_panel(
                 tick=self.simulator.current_time,
@@ -348,10 +353,11 @@ class MemSimGUI(tk.Tk):
     def _show_tick_info(self, info: Dict[str, object]) -> None:
         snapshot = info.get("snapshot", "")
         tick = int(info.get("time", 0))
-        running_pid = info.get("running_pid")
+        running_pid = info.get("running_pid") # type: ignore
+        multiprogramming = int(info.get("degree_of_multiprogramming", 0))
 
         self._set_snapshot(snapshot)
-        self._update_state_panel(tick=tick, running_pid=running_pid)
+        self._update_state_panel(tick=tick, running_pid=running_pid, multiprogramming=multiprogramming)
         self._set_status(f"Tick {tick} ejecutado.")
 
     def _set_snapshot(self, text: str) -> None:
@@ -360,12 +366,14 @@ class MemSimGUI(tk.Tk):
         self.snapshot_text.insert(tk.END, text)
         self.snapshot_text.configure(state=tk.DISABLED)
 
-    def _update_state_panel(self, tick: int, running_pid: Optional[int]) -> None:
+    def _update_state_panel(self, tick: int, running_pid: Optional[int], multiprogramming: int) -> None:
         self.tick_var.set(f"Tick: {tick}")
         if running_pid is None:
             self.cpu_var.set("CPU: inactiva")
         else:
             self.cpu_var.set(f"CPU: PID {running_pid}")
+
+        self.multiprogramming_var.set(f"Grado multiprog.: {multiprogramming}")
 
     def _populate_metrics(self, summary: Dict[str, object]) -> None:
         self._clear_metrics()
@@ -406,7 +414,7 @@ class MemSimGUI(tk.Tk):
 
     def _clear_simulation_view(self) -> None:
         self._set_snapshot("")
-        self._update_state_panel(tick=0, running_pid=None)
+        self._update_state_panel(tick=0, running_pid=None, multiprogramming=0)
         self._clear_metrics()
 
     def _set_status(self, message: str) -> None:

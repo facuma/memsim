@@ -138,6 +138,7 @@ class MemorySimulator:
             'running_pid': self.scheduler.running.pid if self.scheduler.running else None,
             'ready_count': len(self.scheduler.ready_heap),
             'suspended_count': len(self.scheduler.ready_susp),
+            'degree_of_multiprogramming': self.scheduler.count_in_memory(),
             'evento': eventos_registrados,
         }
 
@@ -185,14 +186,14 @@ class MemorySimulator:
         return self._summary_cache
     
     def _has_pending_processes(self) -> bool:
-        """Verifica si aún quedan procesos por atender."""
+        """Verifica si aún quedan procesos por atender en el sistema."""
         return (len(self.arrivals) > 0 or 
                 len(self.scheduler.ready_heap) > 0 or 
                 len(self.scheduler.ready_susp) > 0 or 
                 self.scheduler.running is not None)
     
     def _handle_arrivals(self) -> bool:
-        """Gestiona las llegadas de procesos en el instante actual."""
+        """Gestiona la llegada de procesos en el instante de tiempo actual."""
         eventos = False
         arriving_processes = []
         
@@ -202,10 +203,11 @@ class MemorySimulator:
 
         # Intentar admitir cada proceso entrante
         for process in arriving_processes:
+            # Comprueba si el grado de multiprogramación no ha alcanzado el límite
             if self.scheduler.count_in_memory() < self.max_multiprogramming:
-                # Intentar asignar memoria con Best-Fit
                 partition = self.memory_manager.best_fit(process.size)
                 if partition is not None:
+                    # Admite el proceso si se encontró una partición
                     self.memory_manager.assign(partition, process.pid)
                     if process.remaining <= 0:
                         process.remaining = process.burst
@@ -213,11 +215,12 @@ class MemorySimulator:
                     self.scheduler.push_ready(process)
                     eventos = True
                 else:
+                    # No hay partición, se suspende
                     process.state = State.READY_SUSP
                     self.scheduler.enqueue_suspended(process)
                     eventos = True
             else:
-                # Memoria llena, enviar a suspendidos
+                # Límite de multiprogramación alcanzado, se suspende
                 self.scheduler.enqueue_suspended(process)
                 eventos = True
                 self.logger.debug(f"Proceso {process.pid} suspendido - memoria llena (grado={self.scheduler.count_in_memory()})")
@@ -253,7 +256,7 @@ class MemorySimulator:
         return hubo_cambio
 
     def _execute_tick(self) -> bool:
-        """Ejecuta un intervalo de tiempo."""
+        """Ejecuta un intervalo de tiempo para el proceso en la CPU."""
         if self.scheduler.running is not None:
             self.scheduler.running.remaining = max(0, self.scheduler.running.remaining - 1)
             return True
@@ -303,7 +306,7 @@ class MemorySimulator:
         return hubo_cambio
     
     def _collect_state_snapshot(self) -> str:
-        """Collect current state snapshot for logging."""
+        """Recopila una instantánea del estado actual para la bitácora."""
         # Tabla de memoria
         process_sizes = {p.pid: p.size for p in self.terminated}
         if self.scheduler.running:
@@ -330,7 +333,7 @@ class MemorySimulator:
         )
     
     def _calculate_metrics(self) -> Dict:
-        """Calculate final simulation metrics."""
+        """Calcula las métricas finales de la simulación."""
         if not self.terminated:
             return {
                 'processes': [],
@@ -395,13 +398,13 @@ class MemorySimulator:
 
         # Invariante 1: Grado de multiprogramación <= 5
         current_count = self.scheduler.count_in_memory()
-        assert current_count <= 5, f"Se excedió el grado de multiprogramación: {current_count} > 5 (Multiprogramming degree exceeded)"
+        assert current_count <= 5, f"Se excedió el grado de multiprogramación: {current_count} > 5"
 
         # Invariante 2: No hay PIDs duplicados en particiones
         assigned_pids = set()
         for partition in self.memory_manager.partitions:
             if partition.pid_assigned is not None:
-                assert partition.pid_assigned not in assigned_pids, f"PID duplicado {partition.pid_assigned} en particiones (Duplicate PID {partition.pid_assigned} in partitions)"
+                assert partition.pid_assigned not in assigned_pids, f"PID duplicado {partition.pid_assigned} en particiones"
                 assigned_pids.add(partition.pid_assigned)
 
         # Invariante 3: Cada proceso está en exactamente una estructura
@@ -409,27 +412,27 @@ class MemorySimulator:
 
         # Revisar llegadas
         for process in self.arrivals:
-            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (arrivals)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (llegadas)"
             all_processes.add(process.pid)
 
         # Revisar cola de listos
         for _, _, _, process in self.scheduler.ready_heap:
-            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (ready)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (listos)"
             all_processes.add(process.pid)
 
         # Revisar cola de suspendidos
         for process in self.scheduler.ready_susp:
-            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (ready_susp)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (suspendidos)"
             all_processes.add(process.pid)
 
         # Revisar proceso en ejecución
         if self.scheduler.running is not None:
-            assert self.scheduler.running.pid not in all_processes, f"Proceso {self.scheduler.running.pid} encontrado en múltiples estructuras (running)"
+            assert self.scheduler.running.pid not in all_processes, f"Proceso {self.scheduler.running.pid} encontrado en múltiples estructuras (ejecución)"
             all_processes.add(self.scheduler.running.pid)
 
         # Revisar terminados
         for process in self.terminated:
-            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (terminated)"
+            assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (terminados)"
             all_processes.add(process.pid)
 
     def _export_csv_report(self, summary: Dict):
@@ -479,16 +482,6 @@ class MemorySimulator:
             traceback.print_exc()
 
 
-class SimulationConfig:
-    """
-    Configuración de la simulación.
-
-    Esta clase podría almacenar parámetros como tamaño de memoria o algoritmo
-    de planificación.
-    """
-    pass
-
-
 def run_simulation(config, processes):
     """
     Ejecuta la simulación completa de memoria.
@@ -502,16 +495,3 @@ def run_simulation(config, processes):
     """
     simulator = MemorySimulator()
     return simulator.run_simulation(processes)
-
-
-def generate_report(results):
-    """
-    Genera un reporte detallado de la simulación.
-
-    Args:
-        results: Diccionario con los resultados de la simulación.
-
-    Returns:
-        str: Reporte formateado.
-    """
-    pass

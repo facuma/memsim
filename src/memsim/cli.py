@@ -140,6 +140,11 @@ def main():
         if not processes:
             print("No se cargaron procesos desde el archivo CSV.")
             return 1
+        
+        # Validar que la cantidad de procesos no supere los 10
+        if len(processes) > 10:
+            print("Error: La carga de trabajo no puede superar los 10 procesos.", file=sys.stderr)
+            return 1
 
         # Ejecutar simulación
         simulator = MemorySimulator(log_level=args.log_level)

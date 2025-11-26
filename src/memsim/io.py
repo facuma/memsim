@@ -1,8 +1,9 @@
 """
-Input/Output operations for the memory simulation.
+Operaciones de Entrada/Salida para la simulación de memoria.
 
-This module handles reading process data from files (CSV, JSON),
-writing simulation results, and managing data persistence.
+Este módulo gestiona la lectura de datos de procesos desde archivos (CSV),
+la escritura de resultados de la simulación y la presentación de datos en un
+formato legible.
 """
 
 import csv
@@ -12,17 +13,17 @@ from .models import Process
 
 def read_processes_csv(path: str) -> List[Process]:
     """
-    Read process data from a CSV file.
+    Lee los datos de los procesos desde un archivo CSV.
     
-    Expected CSV format with header: pid,size,arrival,burst
-    Sets remaining=burst when loading.
-    Returns list sorted by arrival time, then by pid.
+    Formato esperado del CSV (con cabecera): pid,size,arrival,burst
+    Establece `remaining` igual a `burst` al cargar.
+    Devuelve una lista ordenada por tiempo de llegada y luego por PID.
     
     Args:
-        path: Path to the CSV file
+        path: Ruta al archivo CSV.
         
     Returns:
-        List[Process]: List of Process objects sorted by arrival then pid
+        Lista de objetos `Process` ordenada por llegada y luego por PID.
     """
     processes = []
     
@@ -31,13 +32,13 @@ def read_processes_csv(path: str) -> List[Process]:
             reader = csv.DictReader(csvfile)
             
             for row in reader:
-                # Parse CSV row
+                # Analiza la fila del CSV
                 pid = int(row['pid'])
                 size = int(row['size'])
                 arrival = int(row['arrival'])
                 burst = int(row['burst'])
                 
-                # Create Process with remaining=burst
+                # Crea el objeto Proceso con remaining=burst
                 process = Process(
                     pid=pid,
                     size=size,
@@ -50,11 +51,11 @@ def read_processes_csv(path: str) -> List[Process]:
     except FileNotFoundError:
         raise FileNotFoundError(f"CSV file not found: {path}")
     except KeyError as e:
-        raise ValueError(f"Missing required column in CSV: {e}")
+        raise ValueError(f"Columna requerida faltante en el CSV: {e}")
     except ValueError as e:
-        raise ValueError(f"Invalid data in CSV file: {e}")
+        raise ValueError(f"Datos inválidos en el archivo CSV: {e}")
     
-    # Sort by arrival time, then by pid
+    # Ordena por tiempo de llegada, y luego por PID como desempate.
     processes.sort(key=lambda p: (p.arrival, p.pid))
     
     return processes
@@ -68,115 +69,58 @@ def pretty_print_state(
     ready_susp: List[Process]
 ) -> str:
     """
-    Generate a formatted string representing the current simulation state.
+    Genera una cadena de texto formateada que representa el estado actual de la simulación.
     
     Args:
-        t: Current simulation time
-        running: Currently running process (None if idle)
-        mem_table: Memory table with partition information
-        ready: List of processes in ready queue
-        ready_susp: List of processes in ready_susp queue
+        t: Tiempo actual de la simulación.
+        running: Proceso actualmente en ejecución (None si la CPU está inactiva).
+        mem_table: Tabla de memoria con información de las particiones.
+        ready: Lista de procesos en la cola de listos.
+        ready_susp: Lista de procesos en la cola de listos/suspendidos.
         
     Returns:
-        str: Formatted state string
+        str: Cadena de texto formateada con el estado.
     """
     lines = []
     
-    # Time and CPU status
+    # Tiempo y estado de la CPU
     cpu_status = f"pid={running.pid}" if running else "IDLE"
     lines.append(f"t={t} | CPU: {cpu_status}")
     
     # Memory table
-    lines.append("Memory:")
+    lines.append("Memoria:")
     if mem_table:
         # Header
-        lines.append("  id  start  size  pid  frag  free")
-        lines.append("  --  -----  ----  ---  ----  ----")
+        lines.append("  id  inicio  tamaño  pid  frag  libre")
+        lines.append("  --  ------  ------  ---  ----  -----")
+        lines.append("  SO    000   100     ---  ----  -----")
         
-        # Data rows
+        # Filas de datos
         for entry in mem_table:
             pid_str = str(entry['pid']) if entry['pid'] is not None else "---"
-            free_str = "Yes" if entry.get('free', True) else "No"
+            free_str = "Si" if entry.get('free', True) else "No"
             lines.append(f"  {entry['id']:2}  {entry['start']:5}  {entry['size']:4}  {pid_str:3}  {entry['frag_interna']:4}  {free_str:4}")
     else:
         lines.append("  (no memory partitions)")
     
-    # Ready queue
-    lines.append("Ready:")
+    # Cola de listos
+    lines.append("Cola Listo:")
     if ready:
         ready_info = []
         for proc in ready:
             ready_info.append(f"pid={proc.pid}(rem={proc.remaining})")
         lines.append(f"  {' '.join(ready_info)}")
     else:
-        lines.append("  (empty)")
+        lines.append("  (Vacio)")
     
-    # Ready suspended queue
-    lines.append("Ready_susp:")
+    # Cola de listos/suspendidos
+    lines.append("Cola Listos/suspendido:")
     if ready_susp:
         susp_info = []
         for proc in ready_susp:
             susp_info.append(f"pid={proc.pid}(size={proc.size})")
         lines.append(f"  {' '.join(susp_info)}")
     else:
-        lines.append("  (empty)")
+        lines.append("  (vacio)")
     
     return "\n".join(lines)
-
-
-def load_processes_from_csv(filepath):
-    """
-    Load process data from a CSV file.
-    
-    Expected CSV format:
-    pid,size,arrival,burst
-    
-    Args:
-        filepath: Path to the CSV file
-        
-    Returns:
-        list: List of Process objects
-    """
-    pass
-
-
-def save_results_to_file(results, filepath, format="csv"):
-    """
-    Save simulation results to a file.
-    
-    Args:
-        results: Dictionary containing simulation results
-        filepath: Path where to save the results
-        format: Output format ("csv", "json", "txt")
-        
-    Returns:
-        bool: True if save successful, False otherwise
-    """
-    pass
-
-
-def export_memory_map(memory_state, filepath):
-    """
-    Export the current memory map to a file.
-    
-    Args:
-        memory_state: Current state of memory allocation
-        filepath: Path where to save the memory map
-        
-    Returns:
-        bool: True if export successful, False otherwise
-    """
-    pass
-
-
-def validate_process_data(processes):
-    """
-    Validate process data for consistency and correctness.
-    
-    Args:
-        processes: List of Process objects to validate
-        
-    Returns:
-        tuple: (is_valid, error_messages)
-    """
-    pass
