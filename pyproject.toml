@@ -7,10 +7,11 @@ readme = "README.md"
 packages = [{include = "memsim", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.15"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
+pyinstaller = "^6.8.0"
 
 [build-system]
 requires = ["poetry-core"]

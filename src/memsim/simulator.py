@@ -186,17 +186,35 @@ class MemorySimulator:
         if self._summary_cache is None:
             summary = self._calcular_metricas()
             summary['simulation_log'] = self.simulation_log
-            self._exportar_reporte_csv(summary)
+            # Llamada a la función de exportación deshabilitada por solicitud.
+            # self._exportar_reporte_csv(summary)
             self._summary_cache = summary
 
         return self._summary_cache
     
     def _tiene_procesos_pendientes(self) -> bool:
         """Verifica si aún quedan procesos por atender en el sistema."""
-        return (len(self.arrivals) > 0 or 
-                len(self.scheduler.cola_listos) > 0 or 
-                len(self.scheduler.cola_suspendidos) > 0 or 
-                self.scheduler.running is not None)
+        # Si hay procesos en llegadas, listos o en ejecución, la simulación no ha terminado.
+        if (len(self.arrivals) > 0 or
+            len(self.scheduler.cola_listos) > 0 or
+            self.scheduler.running is not None):
+            return True
+
+        # Caso especial: solo quedan procesos en la cola de suspendidos.
+        # Si ninguno de ellos puede ser admitido en memoria, la simulación ha terminado
+        # de facto, para evitar un bucle infinito.
+        if len(self.scheduler.cola_suspendidos) > 0:
+            # Buscar si al menos un proceso suspendido podría caber en alguna partición libre.
+            for proc in self.scheduler.cola_suspendidos:
+                # Usamos una llamada hipotética a mejor_ajuste. Si devuelve una partición,
+                # significa que hay esperanza y la simulación debe continuar.
+                if self.memory_manager.mejor_ajuste(proc.size) is not None:
+                    return True  # Hay al menos un proceso que podría entrar.
+            
+            # Si el bucle termina, significa que ningún proceso suspendido cabe. Es un deadlock.
+            return False
+
+        return False # No hay procesos en ninguna cola.
     
     def _manejar_llegadas(self) -> bool:
         """Gestiona la llegada de procesos en el instante de tiempo actual."""
@@ -291,14 +309,21 @@ class MemorySimulator:
     def _manejar_desuspension(self) -> bool:
         """Gestiona la desuspensión de procesos suspendidos."""
         hubo_cambio = False
-        while (self.scheduler.cola_suspendidos and
-               self.scheduler.contar_en_memoria() < self.max_multiprogramming):
-            # Tomar el primero de la cola de suspendidos
+        
+        # Se itera sobre una copia de la cola para evitar bucles infinitos.
+        # Se evalúan todos los procesos suspendidos en cada tick.
+        procesos_a_revisar = len(self.scheduler.cola_suspendidos)
+        for _ in range(procesos_a_revisar):
+            if not (self.scheduler.cola_suspendidos and self.scheduler.contar_en_memoria() < self.max_multiprogramming):
+                break # No hay más que hacer
+
+            # Tomar el primero de la cola para evaluarlo
             process = self.scheduler.desencolar_de_suspendidos()
 
             # Intentar asignar memoria con Best-Fit
             partition = self.memory_manager.mejor_ajuste(process.size)
             if partition is not None:
+                # ¡Éxito! El proceso entra a memoria.
                 self.memory_manager.asignar(partition, process.pid)
                 if process.remaining <= 0:
                     process.remaining = process.burst
@@ -306,11 +331,26 @@ class MemorySimulator:
                 self.scheduler.insertar_en_listos(process)
                 hubo_cambio = True
             else:
-                self.scheduler.cola_suspendidos.appendleft(process)
-                break
+                # No cabe. Se devuelve al final de la cola para intentarlo en un futuro tick.
+                self.scheduler.encolar_en_suspendidos(process)
 
         return hubo_cambio
     
+    def obtener_snapshot_actual(self, structured: bool = False) -> object:
+        """
+        Devuelve una instantánea del estado actual de la simulación.
+
+        Este es un método público seguro para ser consumido por la GUI u otros
+        componentes externos.
+
+        Args:
+            structured: Si es True, devuelve un diccionario; de lo contrario, una cadena.
+
+        Returns:
+            La representación del estado actual.
+        """
+        return self._recolectar_snapshot_estado(structured=structured)
+
     def _recolectar_snapshot_estado(self, structured: bool = False) -> object:
         """Recopila una instantánea del estado actual para la bitácora."""
         # Tabla de memoria
@@ -449,44 +489,57 @@ class MemorySimulator:
         Args:
             summary: Diccionario con los resultados de la simulación.
         """
-        csv_path = os.path.join(os.getcwd(), "simulation_report.csv")
+        # --- FUNCIONALIDAD DESHABILITADA POR SOLICITUD ---
+        # # Determinar el directorio de salida de forma segura.
+        # # Esto es crucial para que funcione correctamente cuando se compila en un .exe.
+        # # sys.executable apunta al .exe, y sys._MEIPASS a la carpeta temporal de PyInstaller.
+        # import sys
+        # if getattr(sys, 'frozen', False):
+        #     # Estamos en un entorno compilado (.exe)
+        #     output_dir = os.path.dirname(sys.executable)
+        # else:
+        #     # Estamos en un entorno de desarrollo normal
+        #     output_dir = os.getcwd()
 
-        try:
-            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.writer(csvfile)
+        # csv_path = os.path.join(output_dir, "simulation_report.csv")
 
-                # Escribir encabezado
-                writer.writerow([
-                    'pid', 'arrival', 'burst', 'start_time', 'finish_time',
-                    'turnaround', 'wait', 'size'
-                ])
+        # try:
+        #     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        #         writer = csv.writer(csvfile)
 
-                # Escribir datos de procesos
-                for process_metrics in summary['processes']:
-                    writer.writerow([
-                        process_metrics['pid'],
-                        process_metrics['arrival'],
-                        process_metrics['burst'],
-                        process_metrics['start_time'],
-                        process_metrics['finish_time'],
-                        process_metrics['turnaround'],
-                        process_metrics['wait'],
-                        process_metrics.get('size', 'N/A')
-                    ])
+        #         self.logger.info(f"Exportando reporte a: {csv_path}")
 
-                # Escribir resumen
-                writer.writerow([])  # Fila vacía
-                writer.writerow(['RESUMEN / SUMMARY', '', '', '', '', '', '', ''])
-                writer.writerow(['avg_turnaround', summary['avg_turnaround'], 'promedio_turnaround'])
-                writer.writerow(['avg_wait', summary['avg_wait'], 'promedio_espera'])
-                writer.writerow(['throughput', summary['throughput'], 'procesos/unidad'])
-                writer.writerow(['tiempo_total', summary['tiempo_total'], 'duración_simulación'])
+        #         # Escribir encabezado
+        #         writer.writerow([
+        #             'pid', 'arrival', 'burst', 'start_time', 'finish_time',
+        #             'turnaround', 'wait', 'size'
+        #         ])
 
-        except Exception as e:
-            # No fallar la simulación si la exportación falla
-            print(f"Advertencia: Error al exportar el reporte CSV: {e}")
-            import traceback
-            traceback.print_exc()
+        #         # Escribir datos de procesos
+        #         for process_metrics in summary['processes']:
+        #             writer.writerow([
+        #                 process_metrics['pid'],
+        #                 process_metrics['arrival'],
+        #                 process_metrics['burst'],
+        #                 process_metrics['start_time'],
+        #                 process_metrics['finish_time'],
+        #                 process_metrics['turnaround'],
+        #                 process_metrics['wait'],
+        #                 process_metrics.get('size', 'N/A')
+        #             ])
+
+        #         # Escribir resumen
+        #         writer.writerow([])  # Fila vacía
+        #         writer.writerow(['RESUMEN / SUMMARY', '', '', '', '', '', '', ''])
+        #         writer.writerow(['avg_turnaround', summary['avg_turnaround'], 'promedio_turnaround'])
+        #         writer.writerow(['avg_wait', summary['avg_wait'], 'promedio_espera'])
+        #         writer.writerow(['throughput', summary['throughput'], 'procesos/unidad'])
+        #         writer.writerow(['tiempo_total', summary['tiempo_total'], 'duración_simulación'])
+
+        # except Exception as e:
+        #     # No fallar la simulación si la exportación falla
+        #     self.logger.error(f"Error al exportar el reporte CSV a '{csv_path}': {e}", exc_info=True)
+        pass
 
 
 def ejecutar_simulacion_completa(config, processes):

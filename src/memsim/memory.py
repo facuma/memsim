@@ -50,13 +50,8 @@ class MemoryManager:
             # Devuelve la partición con el menor tamaño entre las adecuadas.
             return min(suitable_partitions, key=lambda p: p.size)
 
-        if free_partitions and len(free_partitions) < len(self.partitions):
-            # Todas las particiones libres son demasiado pequeñas, pero algo de memoria
-            # está ocupada. Se podría devolver la más grande de las libres para que
-            # el llamador decida (ej. suspender), pero para Best-Fit estricto,
-            # si no cabe, no hay candidato.
-            return max(free_partitions, key=lambda p: p.size)
-
+        # Si no hay particiones adecuadas, no se puede asignar memoria.
+        # El comportamiento anterior era erróneo y asignaba una partición aunque no cupiera.
         return None
     
     def asignar(self, part: Partition, pid: int) -> None:

@@ -60,7 +60,9 @@ En Windows puedes crear un acceso directo que ejecute `python -m memsim.gui` o e
 Con PyInstaller es posible generar un ejecutable autónomo que incluya la GUI y acepte un CSV proporcionado por el usuario:
 
 ```bash
-poetry run pyinstaller -F -n memsim_gui src/memsim/gui.py
+# -F es el alias de --onefile
+# --icon permite especificar un icono para el ejecutable
+poetry run pyinstaller --onefile --name memsim_gui --icon="memory_hardware_9589.ico" src/memsim/gui.py
 ```
 
 El binario quedará en `dist/memsim_gui.exe`. Puedes distribuirlo tal cual o integrarlo en un instalador (por ejemplo, Inno Setup). Asegúrate de incluir los ejemplos de CSV o indicar que el usuario debe seleccionar su propio archivo al abrir la aplicación.

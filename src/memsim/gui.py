@@ -490,10 +490,14 @@ class MemSimGUI(tk.Tk):
             button.configure(state=state)
 
     def _recolectar_snapshot(self) -> str:
+        """
+        Recolecta el estado actual del simulador llamando a un método público.
+        """
         try:
-            return self.simulator._recolectar_snapshot_estado(structured=True)  # type: ignore[attr-defined]
-        except AttributeError:
-            return {}  # Respaldo si cambia la API interna
+            # Llama al método público y seguro, en lugar del privado con nombre incorrecto.
+            return self.simulator.obtener_snapshot_actual(structured=True)
+        except Exception:
+            return {}  # Respaldo en caso de cualquier error inesperado.
 
     # ------------------------------------------------------------------
     # Entrada principal
