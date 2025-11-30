@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import END, DISABLED, NORMAL, filedialog, messagebox, ttk
 from typing import Dict, List, Optional
 
-from memsim.io import read_processes_csv
+from memsim.io import leer_procesos_csv, pretty_print_estado
 from memsim.models import Process
 from memsim.simulator import MemorySimulator
 
@@ -23,15 +23,15 @@ class MemSimGUI(tk.Tk):
         self.simulation_started = False
         self.simulation_finished = False
 
-        self._create_widgets()
-        self._configure_shortcuts()
-        self._update_actions_state()
-        self._set_status("Seleccione un CSV para comenzar.")
-
+        self._crear_widgets()
+        self._configurar_atajos()
+        self._actualizar_estado_acciones()
+        self._establecer_estado("Seleccione un CSV para comenzar.")
+    
     # ------------------------------------------------------------------
     # Configuración de la interfaz
     # ------------------------------------------------------------------
-    def _create_widgets(self) -> None:
+    def _crear_widgets(self) -> None:
         self._create_menu()
         self._create_toolbar()
         self._create_main_panel()
@@ -47,34 +47,34 @@ class MemSimGUI(tk.Tk):
         self.menu_archivo.add_command(
             label="Abrir CSV…",
             accelerator="Ctrl+O",
-            command=self.on_open_csv,
+            command=self.al_abrir_csv,
         )
         self.menu_archivo.add_separator()
         self.menu_archivo.add_command(label="Salir", command=self.quit)
 
         # Menú Simulación
         self.menu_simulacion = tk.Menu(menu_bar, tearoff=False)
-        menu_bar.add_cascade(label="Simulación", menu=self.menu_simulacion)
+        menu_bar.add_cascade(label="Simulación", menu=self.menu_simulacion) # Keep "Simulación"
         self.menu_simulacion.add_command(
             label="Inicializar",
             accelerator="F5",
-            command=self.on_initialize,
+            command=self.al_inicializar,
         )
         self.menu_simulacion.add_command(
             label="Paso (+1 tick)",
             accelerator="F6",
-            command=self.on_step,
+            command=self.al_dar_paso,
         )
         self.menu_simulacion.add_command(
             label="Hasta evento",
             accelerator="F7",
-            command=self.on_step_to_event,
+            command=self.al_ir_a_evento,
         )
         self.menu_simulacion.add_separator()
         self.menu_simulacion.add_command(
             label="Finalizar",
             accelerator="F8",
-            command=self.on_finalize,
+            command=self.al_finalizar,
         )
 
     def _create_toolbar(self) -> None:
@@ -84,27 +84,27 @@ class MemSimGUI(tk.Tk):
         self.toolbar_buttons: Dict[str, ttk.Button] = {}
 
         self.toolbar_buttons["open_csv"] = ttk.Button(
-            toolbar, text="Abrir CSV", command=self.on_open_csv
+            toolbar, text="Abrir CSV", command=self.al_abrir_csv
         )
         self.toolbar_buttons["open_csv"].pack(side=tk.LEFT, padx=4)
 
         self.toolbar_buttons["initialize"] = ttk.Button(
-            toolbar, text="Inicializar", command=self.on_initialize
+            toolbar, text="Inicializar", command=self.al_inicializar
         )
         self.toolbar_buttons["initialize"].pack(side=tk.LEFT, padx=4)
 
         self.toolbar_buttons["step"] = ttk.Button(
-            toolbar, text="Paso", command=self.on_step
+            toolbar, text="Paso", command=self.al_dar_paso
         )
         self.toolbar_buttons["step"].pack(side=tk.LEFT, padx=4)
 
         self.toolbar_buttons["step_event"] = ttk.Button(
-            toolbar, text="Hasta evento", command=self.on_step_to_event
+            toolbar, text="Hasta evento", command=self.al_ir_a_evento
         )
         self.toolbar_buttons["step_event"].pack(side=tk.LEFT, padx=4)
 
         self.toolbar_buttons["finalize"] = ttk.Button(
-            toolbar, text="Finalizar", command=self.on_finalize
+            toolbar, text="Finalizar", command=self.al_finalizar
         )
         self.toolbar_buttons["finalize"].pack(side=tk.LEFT, padx=4)
 
@@ -115,25 +115,60 @@ class MemSimGUI(tk.Tk):
         # Panel izquierdo: snapshot
         left_frame = ttk.Frame(paned, padding=8)
         paned.add(left_frame, weight=3)
+        left_frame.columnconfigure(0, weight=1)
+        left_frame.rowconfigure(1, weight=1) # Tabla de memoria
+        left_frame.rowconfigure(3, weight=1) # Cola de listos
+        left_frame.rowconfigure(5, weight=1) # Cola de suspendidos
 
-        ttk.Label(left_frame, text="Instantánea del estado").pack(anchor=tk.W)
+        # -- Tabla de Memoria --
+        ttk.Label(left_frame, text="Tabla de Memoria").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        mem_container = ttk.Frame(left_frame)
+        mem_container.grid(row=1, column=0, sticky="nsew")
+        mem_container.columnconfigure(0, weight=1)
+        mem_container.rowconfigure(0, weight=1)
 
-        snapshot_container = ttk.Frame(left_frame)
-        snapshot_container.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        self.mem_tree = ttk.Treeview(mem_container, columns=("id", "inicio", "tam", "pid", "frag", "libre"), show="headings")
+        self.mem_tree.grid(row=0, column=0, sticky="nsew")
+        mem_scrollbar = ttk.Scrollbar(mem_container, orient="vertical", command=self.mem_tree.yview)
+        mem_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.mem_tree.configure(yscrollcommand=mem_scrollbar.set)
 
-        self.snapshot_text = tk.Text(
-            snapshot_container,
-            wrap=tk.NONE,
-            font=("Consolas", 10),
-            state=tk.DISABLED,
-        )
-        self.snapshot_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.mem_tree.heading("id", text="ID")
+        self.mem_tree.heading("inicio", text="Inicio")
+        self.mem_tree.heading("tam", text="Tamaño")
+        self.mem_tree.heading("pid", text="PID")
+        self.mem_tree.heading("frag", text="Frag. Int.")
+        self.mem_tree.heading("libre", text="Libre")
+        for col in self.mem_tree['columns']:
+            self.mem_tree.column(col, width=60, anchor="center")
 
-        scrollbar = ttk.Scrollbar(
-            snapshot_container, orient=tk.VERTICAL, command=self.snapshot_text.yview
-        )
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.snapshot_text.configure(yscrollcommand=scrollbar.set)
+        # -- Cola de Listos --
+        ttk.Label(left_frame, text="Cola de Listos").grid(row=2, column=0, sticky="w", pady=(10, 4))
+        ready_container = ttk.Frame(left_frame)
+        ready_container.grid(row=3, column=0, sticky="nsew")
+        ready_container.columnconfigure(0, weight=1)
+        ready_container.rowconfigure(0, weight=1)
+
+        self.ready_tree = ttk.Treeview(ready_container, columns=("pid", "restante"), show="headings")
+        self.ready_tree.grid(row=0, column=0, sticky="nsew")
+        self.ready_tree.heading("pid", text="PID")
+        self.ready_tree.heading("restante", text="Restante")
+        self.ready_tree.column("pid", anchor="center", width=80)
+        self.ready_tree.column("restante", anchor="center", width=80)
+
+        # -- Cola de Listos/Suspendidos --
+        ttk.Label(left_frame, text="Cola de Listos/Suspendidos").grid(row=4, column=0, sticky="w", pady=(10, 4))
+        susp_container = ttk.Frame(left_frame)
+        susp_container.grid(row=5, column=0, sticky="nsew")
+        susp_container.columnconfigure(0, weight=1)
+        susp_container.rowconfigure(0, weight=1)
+
+        self.susp_tree = ttk.Treeview(susp_container, columns=("pid", "tam"), show="headings")
+        self.susp_tree.grid(row=0, column=0, sticky="nsew")
+        self.susp_tree.heading("pid", text="PID")
+        self.susp_tree.heading("tam", text="Tamaño")
+        self.susp_tree.column("pid", anchor="center", width=80)
+        self.susp_tree.column("tam", anchor="center", width=80)
 
         # Panel derecho: estado y métricas
         right_frame = ttk.Frame(paned, padding=8)
@@ -208,18 +243,18 @@ class MemSimGUI(tk.Tk):
         self.status_var = tk.StringVar(value="")
         ttk.Label(status_frame, textvariable=self.status_var).pack(anchor=tk.W)
 
-    def _configure_shortcuts(self) -> None:
-        self.bind("<Control-o>", lambda _: self.on_open_csv())
-        self.bind("<Control-O>", lambda _: self.on_open_csv())
-        self.bind("<F5>", lambda _: self.on_initialize())
-        self.bind("<F6>", lambda _: self.on_step())
-        self.bind("<F7>", lambda _: self.on_step_to_event())
-        self.bind("<F8>", lambda _: self.on_finalize())
+    def _configurar_atajos(self) -> None:
+        self.bind("<Control-o>", lambda _: self.al_abrir_csv())
+        self.bind("<Control-O>", lambda _: self.al_abrir_csv())
+        self.bind("<F5>", lambda _: self.al_inicializar())
+        self.bind("<F6>", lambda _: self.al_dar_paso())
+        self.bind("<F7>", lambda _: self.al_ir_a_evento())
+        self.bind("<F8>", lambda _: self.al_finalizar())
 
     # ------------------------------------------------------------------
     # Acciones de usuario
     # ------------------------------------------------------------------
-    def on_open_csv(self) -> None:
+    def al_abrir_csv(self) -> None:
         filepath = filedialog.askopenfilename(
             title="Seleccionar archivo CSV",
             filetypes=[("Archivos CSV", "*.csv"), ("Todos los archivos", "*.*")],
@@ -228,7 +263,7 @@ class MemSimGUI(tk.Tk):
             return
 
         try:
-            processes = read_processes_csv(filepath)
+            processes = leer_procesos_csv(filepath)
         except (FileNotFoundError, ValueError) as exc:
             messagebox.showwarning(
                 self,
@@ -241,12 +276,12 @@ class MemSimGUI(tk.Tk):
         self.csv_path = filepath
         self.simulation_started = False
         self.simulation_finished = False
-        self._clear_simulation_view()
+        self._limpiar_vista_simulacion()
 
-        self._set_status(f"CSV cargado: {filepath}")
-        self._update_actions_state()
+        self._establecer_estado(f"CSV cargado: {filepath}")
+        self._actualizar_estado_acciones()
 
-    def on_initialize(self) -> None:
+    def al_inicializar(self) -> None:
         if not self.processes:
             messagebox.showwarning(
                 self,
@@ -255,19 +290,19 @@ class MemSimGUI(tk.Tk):
             )
             return
 
-        self.simulator.initialize(self.processes)
+        self.simulator.inicializar(self.processes)
         self.simulation_started = True
         self.simulation_finished = False
 
-        snapshot = self._collect_snapshot()
-        self._set_snapshot(snapshot)
-        self._update_state_panel(tick=0, running_pid=None, multiprogramming=0)
-        self._clear_metrics()
+        snapshot = self._recolectar_snapshot()
+        self._actualizar_vista_snapshot(snapshot)
+        self._actualizar_panel_estado(tick=0, running_pid=None, multiprogramming=0)
+        self._limpiar_metricas()
 
-        self._set_status("Simulador inicializado. Utilice Paso o Hasta evento.")
-        self._update_actions_state()
+        self._establecer_estado("Simulador inicializado. Utilice Paso o Hasta evento.")
+        self._actualizar_estado_acciones()
 
-    def on_step(self) -> None:
+    def al_dar_paso(self) -> None:
         if not self.simulation_started:
             messagebox.showwarning(
                 self,
@@ -276,20 +311,15 @@ class MemSimGUI(tk.Tk):
             )
             return
 
-        info = self.simulator.step()
+        info = self.simulator.paso()
         if info is None:
-            messagebox.showwarning(
-                self,
-                "Simulación finalizada",
-                "No hay más ticks por ejecutar. Finalice para ver métricas.",
-            )
-            self.simulation_finished = True
-            self._update_actions_state()
+            self._establecer_estado("No hay más ticks por ejecutar. Finalizando simulación...")
+            self.al_finalizar()
             return
 
-        self._show_tick_info(info)
+        self._mostrar_info_tick(info)
 
-    def on_step_to_event(self) -> None:
+    def al_ir_a_evento(self) -> None:
         if not self.simulation_started:
             messagebox.showwarning(
                 self,
@@ -298,25 +328,20 @@ class MemSimGUI(tk.Tk):
             )
             return
 
-        info = self.simulator.step_hasta_evento()
+        info = self.simulator.paso_hasta_evento()
         if info is None:
-            messagebox.showwarning(
-                self,
-                "Simulación finalizada",
-                "No hay eventos restantes. Finalice para ver métricas.",
-            )
-            self.simulation_finished = True
-            self._update_actions_state()
+            self._establecer_estado("No hay más eventos. Finalizando simulación...")
+            self.al_finalizar()
             return
 
         salto = info.get("ticks_agregados", 1)
-        self._show_tick_info(info)
+        self._mostrar_info_tick(info)
         if salto > 1:
-            self._set_status(
+            self._establecer_estado(
                 f"Se avanzaron {salto} ticks hasta el siguiente evento significativo."
             )
 
-    def on_finalize(self) -> None:
+    def al_finalizar(self) -> None:
         if not self.simulation_started:
             messagebox.showwarning(
                 self,
@@ -325,48 +350,65 @@ class MemSimGUI(tk.Tk):
             )
             return
 
-        summary = self.simulator.finalize()
+        summary = self.simulator.finalizar()
         self.simulation_finished = True
 
-        # Mostrar último snapshot disponible
-        log = summary.get("simulation_log", [])
-        if log:
-            ultimo_tick = len(log) - 1
-            self._set_snapshot(log[-1])
-            # Recalcular el estado final para el panel
-            running_pid = self.simulator.scheduler.running.pid if self.simulator.scheduler.running else None
-            multiprogramming = self.simulator.scheduler.count_in_memory()
-            self._update_state_panel(tick=ultimo_tick, running_pid=running_pid, multiprogramming=multiprogramming)
-        else:
-            self._update_state_panel(
-                tick=self.simulator.current_time,
-                running_pid=None,
-            )
+        # Actualizar el panel de estado con el tiempo final correcto
+        self._actualizar_panel_estado(
+            tick=summary.get("tiempo_total", self.simulator.current_time),
+            running_pid=None,
+            multiprogramming=0
+        )
 
-        self._populate_metrics(summary)
-        self._set_status("Simulación finalizada. Métricas disponibles.")
-        self._update_actions_state()
+        self._poblar_metricas(summary)
+        self._establecer_estado("Simulación finalizada. Métricas disponibles.")
+        self._actualizar_estado_acciones()
 
     # ------------------------------------------------------------------
     # Utilidades internas
     # ------------------------------------------------------------------
-    def _show_tick_info(self, info: Dict[str, object]) -> None:
-        snapshot = info.get("snapshot", "")
+    def _mostrar_info_tick(self, info: Dict[str, object]) -> None:
+        snapshot = info.get("snapshot_data", {})
         tick = int(info.get("time", 0))
         running_pid = info.get("running_pid") # type: ignore
         multiprogramming = int(info.get("degree_of_multiprogramming", 0))
 
-        self._set_snapshot(snapshot)
-        self._update_state_panel(tick=tick, running_pid=running_pid, multiprogramming=multiprogramming)
-        self._set_status(f"Tick {tick} ejecutado.")
+        self._actualizar_vista_snapshot(snapshot)
+        self._actualizar_panel_estado(tick=tick, running_pid=running_pid, multiprogramming=multiprogramming)
+        self._establecer_estado(f"Tick {tick} ejecutado.")
+
+    def _actualizar_vista_snapshot(self, snapshot_data: Dict) -> None:
+        # Limpiar vistas
+        for tree in [self.mem_tree, self.ready_tree, self.susp_tree]:
+            for item in tree.get_children():
+                tree.delete(item)
+
+        # Poblar tabla de memoria
+        mem_table = snapshot_data.get("mem_table", [])
+        # Fila del SO
+        self.mem_tree.insert("", END, values=("SO", "0", "100", "---", "---", "No"))
+        for entry in mem_table:
+            pid_str = str(entry['pid']) if entry['pid'] is not None else "---"
+            free_str = "Sí" if entry.get('free', True) else "No"
+            self.mem_tree.insert("", END, values=(
+                entry['id'], entry['start'], entry['size'], pid_str,
+                entry['frag_interna'], free_str
+            ))
+
+        # Poblar cola de listos
+        ready_list = snapshot_data.get("ready", [])
+        for proc in ready_list:
+            self.ready_tree.insert("", END, values=(proc.pid, proc.remaining))
+
+        # Poblar cola de suspendidos
+        susp_list = snapshot_data.get("ready_susp", [])
+        for proc in susp_list:
+            self.susp_tree.insert("", END, values=(proc.pid, proc.size))
 
     def _set_snapshot(self, text: str) -> None:
-        self.snapshot_text.configure(state=tk.NORMAL)
-        self.snapshot_text.delete("1.0", tk.END)
-        self.snapshot_text.insert(tk.END, text)
-        self.snapshot_text.configure(state=tk.DISABLED)
+        pass # Obsoleto, se mantiene para evitar errores si es llamado.
 
-    def _update_state_panel(self, tick: int, running_pid: Optional[int], multiprogramming: int) -> None:
+    def _actualizar_panel_estado(self, tick: int, running_pid: Optional[int], multiprogramming: int) -> None:
         self.tick_var.set(f"Tick: {tick}")
         if running_pid is None:
             self.cpu_var.set("CPU: inactiva")
@@ -375,8 +417,8 @@ class MemSimGUI(tk.Tk):
 
         self.multiprogramming_var.set(f"Grado multiprog.: {multiprogramming}")
 
-    def _populate_metrics(self, summary: Dict[str, object]) -> None:
-        self._clear_metrics()
+    def _poblar_metricas(self, summary: Dict[str, object]) -> None:
+        self._limpiar_metricas()
 
         processes = summary.get("processes", [])
         for proc in processes:
@@ -404,7 +446,7 @@ class MemSimGUI(tk.Tk):
         )
         self.total_time_var.set(f"Tiempo total: {summary.get('tiempo_total', 0)} ticks")
 
-    def _clear_metrics(self) -> None:
+    def _limpiar_metricas(self) -> None:
         for child in self.metrics_tree.get_children():
             self.metrics_tree.delete(child)
         self.avg_turnaround_var.set("Promedio retorno: -")
@@ -412,30 +454,30 @@ class MemSimGUI(tk.Tk):
         self.throughput_var.set("Productividad: -")
         self.total_time_var.set("Tiempo total: -")
 
-    def _clear_simulation_view(self) -> None:
-        self._set_snapshot("")
-        self._update_state_panel(tick=0, running_pid=None, multiprogramming=0)
-        self._clear_metrics()
+    def _limpiar_vista_simulacion(self) -> None:
+        self._actualizar_vista_snapshot({})
+        self._actualizar_panel_estado(tick=0, running_pid=None, multiprogramming=0)
+        self._limpiar_metricas()
 
-    def _set_status(self, message: str) -> None:
+    def _establecer_estado(self, message: str) -> None:
         self.status_var.set(message)
 
-    def _update_actions_state(self) -> None:
+    def _actualizar_estado_acciones(self) -> None:
         csv_cargado = bool(self.processes)
         puede_avanzar = self.simulation_started and not self.simulation_finished
 
-        self._set_action_state("initialize", csv_cargado)
-        self._set_action_state("step", puede_avanzar)
-        self._set_action_state("step_event", puede_avanzar)
-        self._set_action_state(
+        self._establecer_estado_accion("initialize", csv_cargado)
+        self._establecer_estado_accion("step", puede_avanzar)
+        self._establecer_estado_accion("step_event", puede_avanzar)
+        self._establecer_estado_accion(
             "finalize", self.simulation_started and not self.simulation_finished
         )
 
-    def _set_action_state(self, action: str, enabled: bool) -> None:
+    def _establecer_estado_accion(self, action: str, enabled: bool) -> None:
         state = tk.NORMAL if enabled else tk.DISABLED
 
         if action == "initialize":
-            self.menu_simulacion.entryconfig("Inicializar", state=state)
+            self.menu_simulacion.entryconfig("Inicializar", state=state) # Keep "Inicializar"
         elif action == "step":
             self.menu_simulacion.entryconfig("Paso (+1 tick)", state=state)
         elif action == "step_event":
@@ -447,11 +489,11 @@ class MemSimGUI(tk.Tk):
         if button is not None:
             button.configure(state=state)
 
-    def _collect_snapshot(self) -> str:
+    def _recolectar_snapshot(self) -> str:
         try:
-            return self.simulator._collect_state_snapshot()  # type: ignore[attr-defined]
+            return self.simulator._recolectar_snapshot_estado(structured=True)  # type: ignore[attr-defined]
         except AttributeError:
-            return "No hay datos para mostrar."  # Respaldo si cambia la API interna
+            return {}  # Respaldo si cambia la API interna
 
     # ------------------------------------------------------------------
     # Entrada principal
@@ -463,10 +505,10 @@ class MemSimGUI(tk.Tk):
             self.destroy()
 
 
-def main() -> None:
+def ejecutar_gui() -> None:
     app = MemSimGUI()
     app.mainloop()
 
 
 if __name__ == "__main__":
-    main()
+    ejecutar_gui()

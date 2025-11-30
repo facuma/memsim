@@ -32,7 +32,7 @@ class MemoryManager:
             Partition(id="P3", start=500, size=50)
         ]
     
-    def best_fit(self, size: int) -> Optional[Partition]:
+    def mejor_ajuste(self, size: int) -> Optional[Partition]:
         """
         Encuentra la partición libre más pequeña que pueda alojar el tamaño dado.
         
@@ -43,7 +43,7 @@ class MemoryManager:
             La partición más pequeña y adecuada. Devuelve None si ninguna partición
             libre es lo suficientemente grande.
         """
-        free_partitions = [p for p in self.partitions if p.is_free]
+        free_partitions = [p for p in self.partitions if p.esta_libre]
         suitable_partitions = [p for p in free_partitions if p.size >= size]
 
         if suitable_partitions:
@@ -59,7 +59,7 @@ class MemoryManager:
 
         return None
     
-    def assign(self, part: Partition, pid: int) -> None:
+    def asignar(self, part: Partition, pid: int) -> None:
         """
         Asigna una partición a un proceso.
         
@@ -69,7 +69,7 @@ class MemoryManager:
         """
         part.pid_assigned = pid
     
-    def release(self, pid: int) -> None:
+    def liberar(self, pid: int) -> None:
         """
         Libera la partición asignada al ID de proceso dado.
         
@@ -81,7 +81,7 @@ class MemoryManager:
                 partition.pid_assigned = None
                 break
     
-    def table_snapshot(self, process_sizes: Dict[int, int]) -> List[Dict]:
+    def snapshot_tabla(self, process_sizes: Dict[int, int]) -> List[Dict]:
         """
         Genera una instantánea de la tabla de memoria para su visualización.
         
@@ -100,7 +100,7 @@ class MemoryManager:
             
             if pid is not None and pid in process_sizes:
                 # Calcula la fragmentación interna, asegurando que no sea negativa.
-                frag_interna = partition.frag_interna(process_sizes[pid])
+                frag_interna = partition.fragmentacion_interna(process_sizes[pid])
             elif pid is not None:
                 # Si no se encuentra el tamaño del proceso, se asume sin fragmentación.
                 frag_interna = 0
@@ -111,7 +111,7 @@ class MemoryManager:
                 'size': partition.size,
                 'pid': pid,
                 'frag_interna': frag_interna,
-                'free': partition.is_free
+                'free': partition.esta_libre
             })
         
         return snapshot

@@ -12,7 +12,7 @@ from typing import List, Dict, Optional, Tuple
 from .models import Process, State, throughput
 from .memory import MemoryManager
 from .scheduler import Scheduler
-from .io import pretty_print_state
+from .io import pretty_print_estado
 
 
 class MemorySimulator:
@@ -24,13 +24,13 @@ class MemorySimulator:
     sistema.
     """
     
-    def __init__(self, debug_mode: bool = False, log_level: str = "INFO"):
+    def __init__(self, modo_depuracion: bool = False, nivel_log: str = "INFO"):
         """
         Inicializa el simulador con el administrador de memoria y el planificador.
 
         Args:
-            debug_mode: Activa validaciones adicionales de invariantes.
-            log_level: Nivel de bitácora ("INFO" o "DEBUG").
+            modo_depuracion: Activa validaciones adicionales de invariantes.
+            nivel_log: Nivel de bitácora ("INFO" o "DEBUG").
         """
         self.memory_manager = MemoryManager()
         self.scheduler = Scheduler()
@@ -38,14 +38,14 @@ class MemorySimulator:
         self.terminated: List[Process] = []
         self.current_time = 0
         self.max_multiprogramming = 5
-        self.debug_mode = debug_mode
+        self.modo_depuracion = modo_depuracion
         self.simulation_log: List[str] = []
         self._simulation_complete = False
         self._summary_cache: Optional[Dict] = None
         
         # Configurar logger
         self.logger = logging.getLogger('memsim')
-        self.logger.setLevel(getattr(logging, log_level.upper()))
+        self.logger.setLevel(getattr(logging, nivel_log.upper()))
 
         # Crear un handler de consola si aún no existe
         if not self.logger.handlers:
@@ -54,7 +54,7 @@ class MemorySimulator:
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
     
-    def initialize(self, processes: List[Process]):
+    def inicializar(self, processes: List[Process]):
         """Inicializa el estado interno para una nueva ejecución."""
         self.arrivals = sorted(processes, key=lambda p: (p.arrival, p.pid))
         self.terminated = []
@@ -65,7 +65,7 @@ class MemorySimulator:
         self._simulation_complete = False
         self._summary_cache = None
 
-    def run_simulation(self, processes: List[Process]) -> Dict:
+    def ejecutar_simulacion(self, processes: List[Process]) -> Dict:
         """
         Ejecuta la simulación completa de memoria.
 
@@ -75,21 +75,21 @@ class MemorySimulator:
         Returns:
             dict: Resultados y métricas de la simulación.
         """
-        self.initialize(processes)
+        self.inicializar(processes)
 
         # Bucle principal de simulación
-        while self.step() is not None:
+        while self.paso() is not None:
             pass
 
-        return self.finalize()
+        return self.finalizar()
 
-    def is_complete(self) -> bool:
+    def esta_completa(self) -> bool:
         """Devuelve True cuando no quedan ticks por ejecutar."""
         if self._simulation_complete:
             return True
-        return not self._has_pending_processes()
+        return not self._tiene_procesos_pendientes()
 
-    def step(self) -> Optional[Dict[str, object]]:
+    def paso(self) -> Optional[Dict[str, object]]:
         """Ejecuta un único tick de la simulación.
 
         Returns:
@@ -99,47 +99,53 @@ class MemorySimulator:
         if self._simulation_complete:
             return None
 
-        if not self._has_pending_processes():
+        if not self._tiene_procesos_pendientes():
             self._simulation_complete = True
             return None
 
         eventos_registrados = False
+        evento_clave = False  # Bandera para eventos de la consigna (llegada/terminación)
 
         # 1) Llegadas en el tiempo actual
-        if self._handle_arrivals():
+        if self._manejar_llegadas():
             eventos_registrados = True
+            evento_clave = True
 
         # 2) Planificación SRTF
-        if self._schedule_srtf():
+        if self._planificar_srtf():
             eventos_registrados = True
 
         # 3) Ejecutar un tick
-        if self._execute_tick():
+        if self._ejecutar_tick():
             eventos_registrados = True
 
         # 4) Manejar terminaciones
-        if self._handle_termination():
+        if self._manejar_terminacion():
             eventos_registrados = True
+            evento_clave = True
 
         # 5) Manejar desuspensiones
-        if self._handle_desuspension():
+        if self._manejar_desuspension():
             eventos_registrados = True
 
         # 6) Validar invariantes (modo debug)
-        self._validate_invariants()
+        self._validar_invariantes()
 
         # 7) Capturar instantánea del estado para bitácora
-        state_snapshot = self._collect_state_snapshot()
-        self.simulation_log.append(state_snapshot)
+        state_snapshot_text = self._recolectar_snapshot_estado(structured=False)
+        state_snapshot_data = self._recolectar_snapshot_estado(structured=True)
+        self.simulation_log.append(state_snapshot_data)
 
         tick_info: Dict[str, object] = {
             'time': self.current_time,
-            'snapshot': state_snapshot,
+            'snapshot': state_snapshot_text, # Para CLI
+            'snapshot_data': state_snapshot_data, # Para GUI
             'running_pid': self.scheduler.running.pid if self.scheduler.running else None,
-            'ready_count': len(self.scheduler.ready_heap),
-            'suspended_count': len(self.scheduler.ready_susp),
-            'degree_of_multiprogramming': self.scheduler.count_in_memory(),
+            'ready_count': len(self.scheduler.cola_listos),
+            'suspended_count': len(self.scheduler.cola_suspendidos),
+            'degree_of_multiprogramming': self.scheduler.contar_en_memoria(),
             'evento': eventos_registrados,
+            'evento_clave': evento_clave, # Añadimos la nueva bandera al resultado del tick
         }
 
         # 8) Incrementar tiempo
@@ -147,7 +153,7 @@ class MemorySimulator:
 
         return tick_info
 
-    def step_hasta_evento(self) -> Optional[Dict[str, object]]:
+    def paso_hasta_evento(self) -> Optional[Dict[str, object]]:
         """Avanza la simulación hasta el siguiente tick con actividad relevante."""
         if self._simulation_complete:
             return None
@@ -156,43 +162,43 @@ class MemorySimulator:
         resultado_final: Optional[Dict[str, object]] = None
 
         while True:
-            info_tick = self.step()
+            info_tick = self.paso()
             if info_tick is None:
                 return resultado_final
 
             ticks_ejecutados += 1
             resultado_final = info_tick
 
-            if info_tick.get('evento', False):
+            if info_tick.get('evento_clave', False):
                 resultado_final = dict(info_tick)
                 resultado_final['ticks_agregados'] = ticks_ejecutados
                 return resultado_final
 
-    def finalize(self) -> Dict:
+    def finalizar(self) -> Dict:
         """Finaliza la simulación y devuelve las métricas de resumen."""
-        if not self._simulation_complete and self._has_pending_processes():
-            while self.step() is not None:
+        if not self._simulation_complete and self._tiene_procesos_pendientes():
+            while self.paso() is not None:
                 pass
 
-        if not self._simulation_complete and not self._has_pending_processes():
+        if not self._simulation_complete and not self._tiene_procesos_pendientes():
             self._simulation_complete = True
 
         if self._summary_cache is None:
-            summary = self._calculate_metrics()
+            summary = self._calcular_metricas()
             summary['simulation_log'] = self.simulation_log
-            self._export_csv_report(summary)
+            self._exportar_reporte_csv(summary)
             self._summary_cache = summary
 
         return self._summary_cache
     
-    def _has_pending_processes(self) -> bool:
+    def _tiene_procesos_pendientes(self) -> bool:
         """Verifica si aún quedan procesos por atender en el sistema."""
         return (len(self.arrivals) > 0 or 
-                len(self.scheduler.ready_heap) > 0 or 
-                len(self.scheduler.ready_susp) > 0 or 
+                len(self.scheduler.cola_listos) > 0 or 
+                len(self.scheduler.cola_suspendidos) > 0 or 
                 self.scheduler.running is not None)
     
-    def _handle_arrivals(self) -> bool:
+    def _manejar_llegadas(self) -> bool:
         """Gestiona la llegada de procesos en el instante de tiempo actual."""
         eventos = False
         arriving_processes = []
@@ -204,49 +210,49 @@ class MemorySimulator:
         # Intentar admitir cada proceso entrante
         for process in arriving_processes:
             # Comprueba si el grado de multiprogramación no ha alcanzado el límite
-            if self.scheduler.count_in_memory() < self.max_multiprogramming:
-                partition = self.memory_manager.best_fit(process.size)
+            if self.scheduler.contar_en_memoria() < self.max_multiprogramming:
+                partition = self.memory_manager.mejor_ajuste(process.size)
                 if partition is not None:
                     # Admite el proceso si se encontró una partición
-                    self.memory_manager.assign(partition, process.pid)
+                    self.memory_manager.asignar(partition, process.pid)
                     if process.remaining <= 0:
                         process.remaining = process.burst
                     process.state = State.READY
-                    self.scheduler.push_ready(process)
+                    self.scheduler.insertar_en_listos(process)
                     eventos = True
                 else:
                     # No hay partición, se suspende
                     process.state = State.READY_SUSP
-                    self.scheduler.enqueue_suspended(process)
+                    self.scheduler.encolar_en_suspendidos(process)
                     eventos = True
             else:
                 # Límite de multiprogramación alcanzado, se suspende
-                self.scheduler.enqueue_suspended(process)
+                self.scheduler.encolar_en_suspendidos(process)
                 eventos = True
-                self.logger.debug(f"Proceso {process.pid} suspendido - memoria llena (grado={self.scheduler.count_in_memory()})")
+                self.logger.debug(f"Proceso {process.pid} suspendido - memoria llena (grado={self.scheduler.contar_en_memoria()})")
 
         return eventos
 
-    def _schedule_srtf(self) -> bool:
+    def _planificar_srtf(self) -> bool:
         """Gestiona la planificación SRTF con desalojo."""
         hubo_cambio = False
         if self.scheduler.running is None:
-            if self.scheduler.ready_heap:
-                process = self.scheduler.pop_ready_min()
+            if self.scheduler.cola_listos:
+                process = self.scheduler.extraer_min_de_listos()
                 self.scheduler.running = process
                 if process.start_time is None:
                     process.start_time = self.current_time
                 process.state = State.RUNNING
                 hubo_cambio = True
         else:
-            if self.scheduler.ready_heap:
-                min_ready = self.scheduler.peek_ready_min()
+            if self.scheduler.cola_listos:
+                min_ready = self.scheduler.ver_min_de_listos()
                 if min_ready.remaining < self.scheduler.running.remaining:
                     preempted = self.scheduler.running
                     self.scheduler.running = None
                     preempted.state = State.READY
-                    self.scheduler.push_ready(preempted)
-                    new_process = self.scheduler.pop_ready_min()
+                    self.scheduler.insertar_en_listos(preempted)
+                    new_process = self.scheduler.extraer_min_de_listos()
                     self.scheduler.running = new_process
                     if new_process.start_time is None:
                         new_process.start_time = self.current_time
@@ -255,14 +261,14 @@ class MemorySimulator:
 
         return hubo_cambio
 
-    def _execute_tick(self) -> bool:
+    def _ejecutar_tick(self) -> bool:
         """Ejecuta un intervalo de tiempo para el proceso en la CPU."""
         if self.scheduler.running is not None:
             self.scheduler.running.remaining = max(0, self.scheduler.running.remaining - 1)
             return True
         return False
 
-    def _handle_termination(self) -> bool:
+    def _manejar_terminacion(self) -> bool:
         """Gestiona la terminación de procesos."""
         if (self.scheduler.running is not None and
             self.scheduler.running.remaining <= 0):
@@ -272,7 +278,7 @@ class MemorySimulator:
             finished_process.state = State.TERMINATED
 
             # Liberar partición de memoria
-            self.memory_manager.release(finished_process.pid)
+            self.memory_manager.liberar(finished_process.pid)
             self.logger.debug(f"Proceso {finished_process.pid} terminado, partición liberada")
 
             # Mover a la lista de terminados
@@ -282,30 +288,30 @@ class MemorySimulator:
 
         return False
 
-    def _handle_desuspension(self) -> bool:
+    def _manejar_desuspension(self) -> bool:
         """Gestiona la desuspensión de procesos suspendidos."""
         hubo_cambio = False
-        while (self.scheduler.ready_susp and
-               self.scheduler.count_in_memory() < self.max_multiprogramming):
+        while (self.scheduler.cola_suspendidos and
+               self.scheduler.contar_en_memoria() < self.max_multiprogramming):
             # Tomar el primero de la cola de suspendidos
-            process = self.scheduler.dequeue_suspended()
+            process = self.scheduler.desencolar_de_suspendidos()
 
             # Intentar asignar memoria con Best-Fit
-            partition = self.memory_manager.best_fit(process.size)
+            partition = self.memory_manager.mejor_ajuste(process.size)
             if partition is not None:
-                self.memory_manager.assign(partition, process.pid)
+                self.memory_manager.asignar(partition, process.pid)
                 if process.remaining <= 0:
                     process.remaining = process.burst
                 process.state = State.READY
-                self.scheduler.push_ready(process)
+                self.scheduler.insertar_en_listos(process)
                 hubo_cambio = True
             else:
-                self.scheduler.ready_susp.appendleft(process)
+                self.scheduler.cola_suspendidos.appendleft(process)
                 break
 
         return hubo_cambio
     
-    def _collect_state_snapshot(self) -> str:
+    def _recolectar_snapshot_estado(self, structured: bool = False) -> object:
         """Recopila una instantánea del estado actual para la bitácora."""
         # Tabla de memoria
         process_sizes = {p.pid: p.size for p in self.terminated}
@@ -313,26 +319,27 @@ class MemorySimulator:
             process_sizes[self.scheduler.running.pid] = self.scheduler.running.size
 
         # Agregar procesos listos
-        for _, _, _, process in self.scheduler.ready_heap:
+        for _, _, _, process in self.scheduler.cola_listos:
             process_sizes[process.pid] = process.size
 
-        mem_table = self.memory_manager.table_snapshot(process_sizes)
+        mem_table = self.memory_manager.snapshot_tabla(process_sizes)
 
         # Listado de procesos listos
-        ready_processes = [process for _, _, _, process in self.scheduler.ready_heap]
+        ready_processes = [process for _, _, _, process in self.scheduler.cola_listos]
 
         # Listado de procesos suspendidos
-        suspended_processes = list(self.scheduler.ready_susp)
+        suspended_processes = list(self.scheduler.cola_suspendidos)
         
-        return pretty_print_state(
+        return pretty_print_estado(
             self.current_time,
             self.scheduler.running,
             mem_table,
             ready_processes,
-            suspended_processes
+            suspended_processes,
+            structured=structured
         )
     
-    def _calculate_metrics(self) -> Dict:
+    def _calcular_metricas(self) -> Dict:
         """Calcula las métricas finales de la simulación."""
         if not self.terminated:
             return {
@@ -386,18 +393,18 @@ class MemorySimulator:
             'tiempo_total': self.current_time
         }
     
-    def _validate_invariants(self):
+    def _validar_invariantes(self):
         """
         Valida las invariantes de la simulación en modo debug.
 
         Raises:
             AssertionError: Si alguna invariante es violada.
         """
-        if not self.debug_mode:
+        if not self.modo_depuracion:
             return
 
         # Invariante 1: Grado de multiprogramación <= 5
-        current_count = self.scheduler.count_in_memory()
+        current_count = self.scheduler.contar_en_memoria()
         assert current_count <= 5, f"Se excedió el grado de multiprogramación: {current_count} > 5"
 
         # Invariante 2: No hay PIDs duplicados en particiones
@@ -416,12 +423,12 @@ class MemorySimulator:
             all_processes.add(process.pid)
 
         # Revisar cola de listos
-        for _, _, _, process in self.scheduler.ready_heap:
+        for _, _, _, process in self.scheduler.cola_listos:
             assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (listos)"
             all_processes.add(process.pid)
 
         # Revisar cola de suspendidos
-        for process in self.scheduler.ready_susp:
+        for process in self.scheduler.cola_suspendidos:
             assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (suspendidos)"
             all_processes.add(process.pid)
 
@@ -435,7 +442,7 @@ class MemorySimulator:
             assert process.pid not in all_processes, f"Proceso {process.pid} encontrado en múltiples estructuras (terminados)"
             all_processes.add(process.pid)
 
-    def _export_csv_report(self, summary: Dict):
+    def _exportar_reporte_csv(self, summary: Dict):
         """
         Exporta las métricas de la simulación a un archivo CSV.
 
@@ -482,7 +489,7 @@ class MemorySimulator:
             traceback.print_exc()
 
 
-def run_simulation(config, processes):
+def ejecutar_simulacion_completa(config, processes):
     """
     Ejecuta la simulación completa de memoria.
 
@@ -494,4 +501,4 @@ def run_simulation(config, processes):
         dict: Resultados y métricas de la simulación.
     """
     simulator = MemorySimulator()
-    return simulator.run_simulation(processes)
+    return simulator.ejecutar_simulacion(processes)

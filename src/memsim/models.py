@@ -12,11 +12,11 @@ from typing import Optional
 
 class State(Enum):
     """Estados de un proceso en la simulación."""
-    NEW = "NEW"
-    READY = "READY"
-    READY_SUSP = "READY_SUSP"
-    RUNNING = "RUNNING"
-    TERMINATED = "TERMINATED"
+    NEW = "NUEVO"
+    READY = "LISTO"
+    READY_SUSP = "LISTO_SUSPENDIDO"
+    RUNNING = "EJECUCION"
+    TERMINATED = "TERMINADO"
 
 
 @dataclass
@@ -43,7 +43,7 @@ class Process:
     finish_time: Optional[int] = None
     state: State = State.NEW
     
-    def to_row(self) -> dict:
+    def a_fila(self) -> dict:
         """
         Convierte el proceso a un diccionario para fines de registro o visualización.
         
@@ -79,7 +79,7 @@ class Partition:
     pid_assigned: Optional[int] = None
     
     @property
-    def is_free(self) -> bool:
+    def esta_libre(self) -> bool:
         """
         Comprueba si la partición está libre (no asignada a ningún proceso).
         
@@ -88,7 +88,7 @@ class Partition:
         """
         return self.pid_assigned is None
     
-    def frag_interna(self, process_size: int) -> int:
+    def fragmentacion_interna(self, process_size: int) -> int:
         """
         Calcula la fragmentación interna para un tamaño de proceso dado.
         
@@ -99,7 +99,7 @@ class Partition:
             int: Fragmentación interna (espacio desperdiciado) si esta partición
                  fuera asignada a un proceso del tamaño especificado.
         """
-        if self.is_free:
+        if self.pid_assigned is None:
             return 0
         return max(0, self.size - process_size)
 

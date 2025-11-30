@@ -8,10 +8,10 @@ parámetros y mostrar resultados.
 import argparse
 import sys
 from .simulator import MemorySimulator
-from .io import read_processes_csv
+from .io import leer_procesos_csv
 
 
-def create_parser():
+def crear_parser():
     """
     Crea el parser de argumentos de la línea de comandos.
 
@@ -44,7 +44,7 @@ Ejemplos:
     parser.add_argument(
         "--no-header",
         action="store_true",
-        help="No imprimir encabezados en la salida"
+        help="No imprimir cabeceras en la salida"
     )
 
     parser.add_argument(
@@ -63,7 +63,7 @@ Ejemplos:
     return parser
 
 
-def print_process_table(processes, show_header=True):
+def imprimir_tabla_procesos(processes, mostrar_cabecera=True):
     """
     Imprime la tabla de resultados por proceso.
 
@@ -72,19 +72,19 @@ def print_process_table(processes, show_header=True):
         show_header: Si se deben imprimir encabezados.
     """
     if not processes:
-        print("No se completaron procesos.")
+        print("No se completó ningún proceso.")
         return
 
-    if show_header:
+    if mostrar_cabecera:
         print("\nResultados por proceso:")
         print("pid  arrival  burst  start_time  finish_time  turnaround  wait")
         print("---  -------  -----  ----------  -----------  ----------  ----")
     
     for proc in processes:
-        print(f"{proc['pid']:3}  {proc['arrival']:7}  {proc['burst']:5}  {proc['start_time']:10}  {proc['finish_time']:11}  {proc['turnaround']:10}  {proc['wait']:4}")
+        print(f"{proc['pid']:<3}  {proc['arrival']:<7}  {proc['burst']:<5}  {proc['start_time']:<10}  {proc['finish_time']:<11}  {proc['turnaround']:<10}  {proc['wait']:<4}")
 
 
-def print_summary(avg_turnaround, avg_wait, throughput, tiempo_total, show_header=True):
+def imprimir_resumen(avg_turnaround, avg_wait, throughput, tiempo_total, mostrar_cabecera=True):
     """
     Imprime las estadísticas de resumen.
 
@@ -95,7 +95,7 @@ def print_summary(avg_turnaround, avg_wait, throughput, tiempo_total, show_heade
         tiempo_total: Tiempo total de simulación.
         show_header: Si se imprime el encabezado de sección.
     """
-    if show_header:
+    if mostrar_cabecera:
         print("\nResumen:")
 
     print(f"Tiempo promedio de turnaround: {avg_turnaround:.2f}")
@@ -104,7 +104,7 @@ def print_summary(avg_turnaround, avg_wait, throughput, tiempo_total, show_heade
     print(f"Tiempo total de simulación: {tiempo_total}")
 
 
-def should_log_tick(tick_log_mode, current_time, last_logged_time, events_occurred):
+def debe_registrar_tick(modo_log_tick, tiempo_actual, ultimo_tiempo_log, eventos_ocurrieron):
     """
     Determina si se debe registrar el tick actual según el modo elegido.
 
@@ -117,11 +117,11 @@ def should_log_tick(tick_log_mode, current_time, last_logged_time, events_occurr
     Returns:
         bool: True si corresponde registrar el tick.
     """
-    if tick_log_mode == "none":
+    if modo_log_tick == "none":
         return False
-    elif tick_log_mode == "events":
-        return events_occurred
-    elif tick_log_mode == "ticks":
+    elif modo_log_tick == "events":
+        return eventos_ocurrieron
+    elif modo_log_tick == "ticks":
         return True
     return False
 
@@ -130,12 +130,12 @@ def main():
     """
     Punto de entrada principal de la aplicación CLI.
     """
-    parser = create_parser()
+    parser = crear_parser()
     args = parser.parse_args()
 
     try:
         # Cargar procesos desde CSV
-        processes = read_processes_csv(args.csv)
+        processes = leer_procesos_csv(args.csv)
 
         if not processes:
             print("No se cargaron procesos desde el archivo CSV.")
@@ -147,14 +147,14 @@ def main():
             return 1
 
         # Ejecutar simulación
-        simulator = MemorySimulator(log_level=args.log_level)
+        simulator = MemorySimulator(nivel_log=args.log_level)
 
         if args.interactive:
-            simulator.initialize(processes)
+            simulator.inicializar(processes)
             print("Modo interactivo activado. Presiona Enter para avanzar un tick, 's' para saltar al siguiente evento o escribe 'q' para finalizar.")
 
             while True:
-                if simulator.is_complete():
+                if simulator.esta_completa():
                     print("La simulación ha finalizado.")
                     break
 
@@ -165,7 +165,7 @@ def main():
                     break
 
                 if comando == "s":
-                    tick_info = simulator.step_hasta_evento()
+                    tick_info = simulator.paso_hasta_evento()
                     if tick_info is None:
                         print("La simulación ha finalizado.")
                         break
@@ -174,7 +174,7 @@ def main():
                     print(tick_info['snapshot'])
                     continue
 
-                tick_info = simulator.step()
+                tick_info = simulator.paso()
                 if tick_info is None:
                     print("La simulación ha finalizado.")
                     break
@@ -182,9 +182,9 @@ def main():
                 print(f"\n--- Tick {tick_info['time']} ---")
                 print(tick_info['snapshot'])
 
-            results = simulator.finalize()
+            results = simulator.finalizar()
         else:
-            results = simulator.run_simulation(processes)
+            results = simulator.ejecutar_simulacion(processes)
 
         # Mostrar estados intermedios según tick-log (reproducción no interactiva)
         if not args.interactive and args.tick_log != "none":
@@ -198,14 +198,14 @@ def main():
                 if "CPU: pid=" in log_entry or "CPU: IDLE" in log_entry:
                     events_occurred = True
 
-                if should_log_tick(args.tick_log, current_time, last_logged_time, events_occurred):
+                if debe_registrar_tick(args.tick_log, current_time, last_logged_time, events_occurred):
                     print(f"\n--- Tick {current_time} ---")
                     print(log_entry)
                     last_logged_time = current_time
 
         # Mostrar resultados finales
-        print_process_table(results['processes'], not args.no_header)
-        print_summary(
+        imprimir_tabla_procesos(results['processes'], not args.no_header)
+        imprimir_resumen(
             results['avg_turnaround'],
             results['avg_wait'],
             results['throughput'],

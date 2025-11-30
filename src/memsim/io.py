@@ -11,7 +11,7 @@ from typing import List, Optional
 from .models import Process
 
 
-def read_processes_csv(path: str) -> List[Process]:
+def leer_procesos_csv(path: str) -> List[Process]:
     """
     Lee los datos de los procesos desde un archivo CSV.
     
@@ -61,16 +61,17 @@ def read_processes_csv(path: str) -> List[Process]:
     return processes
 
 
-def pretty_print_state(
+def pretty_print_estado(
     t: int, 
     running: Optional[Process], 
     mem_table: List[dict], 
-    ready: List[Process], 
-    ready_susp: List[Process]
-) -> str:
+    ready: List[Process],
+    ready_susp: List[Process],
+    structured: bool = False
+) -> object:
     """
-    Genera una cadena de texto formateada que representa el estado actual de la simulación.
-    
+    Genera una representación del estado actual de la simulación.
+
     Args:
         t: Tiempo actual de la simulación.
         running: Proceso actualmente en ejecución (None si la CPU está inactiva).
@@ -79,8 +80,13 @@ def pretty_print_state(
         ready_susp: Lista de procesos en la cola de listos/suspendidos.
         
     Returns:
-        str: Cadena de texto formateada con el estado.
+        - Si `structured` es False (por defecto), devuelve una cadena de texto formateada.
+        - Si `structured` es True, devuelve un diccionario con los datos.
     """
+    if structured:
+        return {"mem_table": mem_table, "ready": ready, "ready_susp": ready_susp}
+
+    # El resto de la función es para la salida de texto (CLI)
     lines = []
     
     # Tiempo y estado de la CPU
@@ -97,7 +103,7 @@ def pretty_print_state(
         
         # Filas de datos
         for entry in mem_table:
-            pid_str = str(entry['pid']) if entry['pid'] is not None else "---"
+            pid_str = str(entry['pid']) if entry.get('pid') is not None else "---"
             free_str = "Si" if entry.get('free', True) else "No"
             lines.append(f"  {entry['id']:2}  {entry['start']:5}  {entry['size']:4}  {pid_str:3}  {entry['frag_interna']:4}  {free_str:4}")
     else:
