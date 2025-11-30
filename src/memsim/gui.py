@@ -290,16 +290,17 @@ class MemSimGUI(tk.Tk):
             )
             return
 
+        # Inicializa el estado interno del simulador.
         self.simulator.inicializar(self.processes)
         self.simulation_started = True
         self.simulation_finished = False
-
-        snapshot = self._recolectar_snapshot()
-        self._actualizar_vista_snapshot(snapshot)
-        self._actualizar_panel_estado(tick=0, running_pid=None, multiprogramming=0)
         self._limpiar_metricas()
 
-        self._establecer_estado("Simulador inicializado. Utilice Paso o Hasta evento.")
+        # Ejecuta el primer tick (t=0) para procesar las llegadas iniciales
+        # y mostrar el estado correcto desde el principio.
+        info_tick_0 = self.simulator.paso()
+        self._mostrar_info_tick(info_tick_0)
+        self._establecer_estado("Simulador inicializado en t=0. Utilice 'Paso' o 'Hasta evento' para continuar.")
         self._actualizar_estado_acciones()
 
     def al_dar_paso(self) -> None:
@@ -493,11 +494,11 @@ class MemSimGUI(tk.Tk):
         """
         Recolecta el estado actual del simulador llamando a un método público.
         """
+        snapshot_data = self.simulator.obtener_snapshot_actual(structured=True)
         try:
-            # Llama al método público y seguro, en lugar del privado con nombre incorrecto.
-            return self.simulator.obtener_snapshot_actual(structured=True)
+            return snapshot_data
         except Exception:
-            return {}  # Respaldo en caso de cualquier error inesperado.
+            return {}
 
     # ------------------------------------------------------------------
     # Entrada principal

@@ -23,7 +23,7 @@ class Scheduler:
     
     def __init__(self):
         """Inicializa el planificador con las colas vacías."""
-        self.cola_listos: List[Tuple[int, int, int, Process]] = []  # (remaining, tiebreak, pid, Process)
+        self.cola_listos: List[Tuple[int, int, int, Process]] = []
         self.cola_suspendidos: deque = deque()  # Cola FIFO para procesos suspendidos
         self.running: Optional[Process] = None
         self.tiebreak_counter: int = 0
@@ -87,30 +87,16 @@ class Scheduler:
         
         return self.cola_suspendidos.popleft()
     
-    def desalojar_si_es_necesario(self, tiempo_restante_minimo_entrante: int) -> bool:
-        """
-        Comprueba si el proceso en ejecución actual debe ser desalojado (preempted).
-        
-        Args:
-            tiempo_restante_minimo_entrante: Tiempo restante mínimo de los procesos entrantes.
-            
-        Returns:
-            True si el proceso en ejecución debe ser desalojado, False en caso contrario.
-        """
-        if self.running is None:
-            return False
-        
-        # Se desaloja si un proceso entrante tiene menor tiempo restante.
-        return tiempo_restante_minimo_entrante < self.running.remaining
-    
     def contar_en_memoria(self) -> int:
         """
         Calcula el grado de multiprogramación del sistema.
 
-        Esto incluye procesos en estado Listo (en memoria) y Ejecución (en CPU).
-        Los procesos en Listo/Suspendido están en disco y no cuentan.
+        Esto incluye procesos en estado Listo (en memoria), Ejecución (en CPU)
+        y Listo/Suspendido (en disco, pero contando para el límite del sistema).
         
         Returns:
             int: Grado de multiprogramación.
         """
-        return len(self.cola_listos) + (1 if self.running is not None else 0)
+        en_memoria_y_cpu = len(self.cola_listos) + (1 if self.running is not None else 0)
+        en_disco = len(self.cola_suspendidos)
+        return en_memoria_y_cpu + en_disco

@@ -37,6 +37,7 @@ class MemorySimulator:
         self.arrivals: List[Process] = []
         self.terminated: List[Process] = []
         self.current_time = 0
+        self.proceso_a_terminar: Optional[Process] = None
         self.max_multiprogramming = 5
         self.modo_depuracion = modo_depuracion
         self.simulation_log: List[str] = []
@@ -59,6 +60,7 @@ class MemorySimulator:
         self.arrivals = sorted(processes, key=lambda p: (p.arrival, p.pid))
         self.terminated = []
         self.current_time = 0
+        self.proceso_a_terminar = None
         self.scheduler = Scheduler()
         self.memory_manager = MemoryManager()
         self.simulation_log = []
@@ -106,29 +108,33 @@ class MemorySimulator:
         eventos_registrados = False
         evento_clave = False  # Bandera para eventos de la consigna (llegada/terminación)
 
-        # 1) Llegadas en el tiempo actual
+        # 1) Gestionar terminaciones del tick ANTERIOR.
+        # Esto asegura que la CPU y la memoria se liberen al inicio del nuevo tick.
+        if self._manejar_terminaciones_previas():
+            eventos_registrados = True
+            evento_clave = True
+
+        # 2) Llegadas de nuevos procesos en el tiempo actual.
         if self._manejar_llegadas():
             eventos_registrados = True
             evento_clave = True
 
-        # 2) Planificación SRTF
-        if self._planificar_srtf():
-            eventos_registrados = True
-
-        # 3) Ejecutar un tick
-        if self._ejecutar_tick():
-            eventos_registrados = True
-
-        # 4) Manejar terminaciones
-        if self._manejar_terminacion():
-            eventos_registrados = True
-            evento_clave = True
-
-        # 5) Manejar desuspensiones
+        # 3) Desuspender procesos si hay espacio.
         if self._manejar_desuspension():
             eventos_registrados = True
 
-        # 6) Validar invariantes (modo debug)
+        # 4) Planificación SRTF: decidir quién usa la CPU.
+        if self._planificar_srtf():
+            eventos_registrados = True
+
+        # 5) Ejecutar un tick del proceso en la CPU.
+        if self._ejecutar_tick():
+            eventos_registrados = True
+
+        # 6) Identificar si el proceso actual ha terminado, para gestionarlo en el siguiente tick.
+        self._identificar_proceso_terminado()
+
+        # 7) Validar invariantes (modo debug)
         self._validar_invariantes()
 
         # 7) Capturar instantánea del estado para bitácora
@@ -148,7 +154,7 @@ class MemorySimulator:
             'evento_clave': evento_clave, # Añadimos la nueva bandera al resultado del tick
         }
 
-        # 8) Incrementar tiempo
+        # 9) Incrementar tiempo
         self.current_time += 1
 
         return tick_info
@@ -221,63 +227,86 @@ class MemorySimulator:
         eventos = False
         arriving_processes = []
         
-        # Buscar procesos que llegan en el tiempo actual
-        while self.arrivals and self.arrivals[0].arrival == self.current_time:
+        # Buscar procesos cuya hora de llegada ya pasó o es la actual.
+        # Esto asegura que los procesos que no pudieron entrar antes sean reintentados.
+        while self.arrivals and self.arrivals[0].arrival <= self.current_time:
             arriving_processes.append(self.arrivals.pop(0))
 
-        # Intentar admitir cada proceso entrante
-        for process in arriving_processes:
-            # Comprueba si el grado de multiprogramación no ha alcanzado el límite
-            if self.scheduler.contar_en_memoria() < self.max_multiprogramming:
-                partition = self.memory_manager.mejor_ajuste(process.size)
-                if partition is not None:
-                    # Admite el proceso si se encontró una partición
-                    self.memory_manager.asignar(partition, process.pid)
-                    if process.remaining <= 0:
-                        process.remaining = process.burst
-                    process.state = State.READY
-                    self.scheduler.insertar_en_listos(process)
-                    eventos = True
-                else:
-                    # No hay partición, se suspende
-                    process.state = State.READY_SUSP
-                    self.scheduler.encolar_en_suspendidos(process)
-                    eventos = True
+        # Procesar la lista de procesos que llegaron en este tick
+        for i, process in enumerate(arriving_processes):
+            # Solo se admite un nuevo proceso si el grado de multiprogramación es menor al máximo.
+            if self.scheduler.contar_en_memoria() >= self.max_multiprogramming:
+                # El sistema está lleno. Los procesos restantes de este tick se devuelven
+                # a la cola de llegadas para ser reintentados en el siguiente tick.
+                self.logger.debug(f"Proceso {process.pid} no admitido. Grado de multiprogramación ({self.scheduler.contar_en_memoria()}) al máximo.")
+                
+                # Re-insertar los procesos no admitidos al principio de la cola de llegadas.
+                procesos_no_admitidos = arriving_processes[i:]
+                self.arrivals = procesos_no_admitidos + self.arrivals
+                break  # No se pueden admitir más procesos en este tick.
+
+            # Hay espacio en el sistema. Intentar colocar en memoria.
+            partition = self.memory_manager.mejor_ajuste(process.size)
+            if partition is not None:
+                # Se encontró partición, el proceso va a la cola de listos.
+                self.memory_manager.asignar(partition, process.pid)
+                process.state = State.READY
+                self.scheduler.insertar_en_listos(process)
+                eventos = True
             else:
-                # Límite de multiprogramación alcanzado, se suspende
+                # No hay partición de memoria, pero sí hay espacio en el sistema. Se suspende.
+                process.state = State.READY_SUSP
                 self.scheduler.encolar_en_suspendidos(process)
                 eventos = True
-                self.logger.debug(f"Proceso {process.pid} suspendido - memoria llena (grado={self.scheduler.contar_en_memoria()})")
 
         return eventos
 
+
     def _planificar_srtf(self) -> bool:
         """Gestiona la planificación SRTF con desalojo."""
-        hubo_cambio = False
+        # Si no hay proceso en ejecución, se elige el de menor tiempo restante.
         if self.scheduler.running is None:
             if self.scheduler.cola_listos:
-                process = self.scheduler.extraer_min_de_listos()
-                self.scheduler.running = process
-                if process.start_time is None:
-                    process.start_time = self.current_time
-                process.state = State.RUNNING
-                hubo_cambio = True
-        else:
-            if self.scheduler.cola_listos:
-                min_ready = self.scheduler.ver_min_de_listos()
-                if min_ready.remaining < self.scheduler.running.remaining:
-                    preempted = self.scheduler.running
-                    self.scheduler.running = None
-                    preempted.state = State.READY
-                    self.scheduler.insertar_en_listos(preempted)
-                    new_process = self.scheduler.extraer_min_de_listos()
-                    self.scheduler.running = new_process
-                    if new_process.start_time is None:
-                        new_process.start_time = self.current_time
-                    new_process.state = State.RUNNING
-                    hubo_cambio = True
+                proc = self.scheduler.extraer_min_de_listos()
+                self.scheduler.running = proc
+                if proc.start_time is None:
+                    proc.start_time = self.current_time
+                proc.state = State.RUNNING
+                return True
+            return False
 
-        return hubo_cambio
+        # Si hay un proceso en ejecución, se verifica si debe ser desalojado.
+        # Esto solo ocurre si llega un proceso a la cola de listos con un tiempo
+        # restante *estrictamente menor*.
+        if self.scheduler.cola_listos:
+            min_en_listos = self.scheduler.ver_min_de_listos()
+            proceso_actual = self.scheduler.running
+
+            # Condición de desalojo: solo si el nuevo proceso tiene un tiempo
+            # restante estrictamente menor. En caso de empate, el proceso
+            # actual en la CPU mantiene su lugar.
+            if min_en_listos.remaining < proceso_actual.remaining:
+                # Se desaloja el proceso actual.
+                self.logger.debug(
+                    f"Proceso {proceso_actual.pid} (rem: {proceso_actual.remaining}) será desalojado por "
+                    f"proceso en listos {min_en_listos.pid} (rem: {min_en_listos.remaining})."
+                )
+                proceso_actual.state = State.READY
+                self.scheduler.insertar_en_listos(proceso_actual)
+
+                # El nuevo proceso (que ya estaba en la cola de listos) toma la CPU.
+                nuevo_proceso_cpu = self.scheduler.extraer_min_de_listos()
+                
+                # Invariante: el proceso extraído debe ser el que vimos como mínimo.
+                assert nuevo_proceso_cpu.pid == min_en_listos.pid, "Error de lógica en desalojo SRTF"
+
+                self.scheduler.running = nuevo_proceso_cpu
+                if nuevo_proceso_cpu.start_time is None:
+                    nuevo_proceso_cpu.start_time = self.current_time
+                nuevo_proceso_cpu.state = State.RUNNING
+                return True
+
+        return False
 
     def _ejecutar_tick(self) -> bool:
         """Ejecuta un intervalo de tiempo para el proceso en la CPU."""
@@ -286,24 +315,31 @@ class MemorySimulator:
             return True
         return False
 
-    def _manejar_terminacion(self) -> bool:
-        """Gestiona la terminación de procesos."""
+    def _identificar_proceso_terminado(self) -> None:
+        """
+        Identifica si el proceso en ejecución ha completado su ráfaga.
+        Si es así, lo marca para ser terminado en el siguiente tick.
+        """
         if (self.scheduler.running is not None and
             self.scheduler.running.remaining <= 0):
-            # Proceso finalizado
-            finished_process = self.scheduler.running
-            finished_process.finish_time = self.current_time + 1
-            finished_process.state = State.TERMINATED
+            self.proceso_a_terminar = self.scheduler.running
 
-            # Liberar partición de memoria
-            self.memory_manager.liberar(finished_process.pid)
-            self.logger.debug(f"Proceso {finished_process.pid} terminado, partición liberada")
+    def _manejar_terminaciones_previas(self) -> bool:
+        """
+        Gestiona la terminación de un proceso que fue marcado en el tick anterior.
+        Libera la CPU y la memoria.
+        """
+        if self.proceso_a_terminar:
+            proc = self.proceso_a_terminar
+            proc.finish_time = self.current_time
+            proc.state = State.TERMINATED
 
-            # Mover a la lista de terminados
-            self.terminated.append(finished_process)
+            self.memory_manager.liberar(proc.pid)
+            self.logger.debug(f"Proceso {proc.pid} terminado, partición liberada.")
+            self.terminated.append(proc)
             self.scheduler.running = None
+            self.proceso_a_terminar = None
             return True
-
         return False
 
     def _manejar_desuspension(self) -> bool:
@@ -313,13 +349,15 @@ class MemorySimulator:
         # Se itera sobre una copia de la cola para evitar bucles infinitos.
         # Se evalúan todos los procesos suspendidos en cada tick.
         procesos_a_revisar = len(self.scheduler.cola_suspendidos)
+        
         for _ in range(procesos_a_revisar):
-            if not (self.scheduler.cola_suspendidos and self.scheduler.contar_en_memoria() < self.max_multiprogramming):
-                break # No hay más que hacer
+            # Si no hay procesos suspendidos o el sistema está lleno, no hay nada que hacer.
+            if not self.scheduler.cola_suspendidos or self.scheduler.contar_en_memoria() >= self.max_multiprogramming:
+                break
 
             # Tomar el primero de la cola para evaluarlo
             process = self.scheduler.desencolar_de_suspendidos()
-
+            
             # Intentar asignar memoria con Best-Fit
             partition = self.memory_manager.mejor_ajuste(process.size)
             if partition is not None:
