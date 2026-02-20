@@ -32,6 +32,15 @@ class MemoryManager:
             Partition(id="P3", start=500, size=50)
         ]
     
+    def get_max_partition_size(self) -> int:
+        """
+        Devuelve el tamaño de la partición más grande disponible.
+        
+        Returns:
+            int: Tamaño máximo de partición.
+        """
+        return max(p.size for p in self.partitions)
+    
     def mejor_ajuste(self, size: int) -> Optional[Partition]:
         """
         Encuentra la partición libre más pequeña que pueda alojar el tamaño dado.

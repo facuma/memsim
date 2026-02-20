@@ -200,65 +200,105 @@ class MemorySimulator:
     
     def _tiene_procesos_pendientes(self) -> bool:
         """Verifica si aún quedan procesos por atender en el sistema."""
-        # Si hay procesos en llegadas, listos o en ejecución, la simulación no ha terminado.
-        if (len(self.arrivals) > 0 or
-            len(self.scheduler.cola_listos) > 0 or
+        # Si hay procesos en listos o en ejecución, la simulación no ha terminado.
+        if (len(self.scheduler.cola_listos) > 0 or
             self.scheduler.running is not None):
             return True
 
-        # Caso especial: solo quedan procesos en la cola de suspendidos.
-        # Si ninguno de ellos puede ser admitido en memoria, la simulación ha terminado
-        # de facto, para evitar un bucle infinito.
+        # Caso especial: procesos suspendidos.
         if len(self.scheduler.cola_suspendidos) > 0:
-            # Buscar si al menos un proceso suspendido podría caber en alguna partición libre.
             for proc in self.scheduler.cola_suspendidos:
-                # Usamos una llamada hipotética a mejor_ajuste. Si devuelve una partición,
-                # significa que hay esperanza y la simulación debe continuar.
+                # Si hay esperanza de que entre, seguimos.
                 if self.memory_manager.mejor_ajuste(proc.size) is not None:
-                    return True  # Hay al menos un proceso que podría entrar.
-            
-            # Si el bucle termina, significa que ningún proceso suspendido cabe. Es un deadlock.
+                    return True
+            # Si solo hay suspendidos y ninguno entra, es deadlock/fin (salvo que lleguen nuevos).
+            # Pero hay que mirar arrivals abajo. Si no hay arrivals, es fin.
+
+        # Verificar arrivals
+        if not self.arrivals:
+            # Si no hay arrivals, y llegamos aquí, es porque:
+            # - No hay running
+            # - No hay listos
+            # - Suspendidos no entran (o no hay)
             return False
 
-        return False # No hay procesos en ninguna cola.
+        # Si hay arrivals, verificar si alguno es viable o futuro.
+        max_partition_size = self.memory_manager.get_max_partition_size()
+        for p in self.arrivals:
+            # Si es futuro, la simulacion sigue.
+            if p.arrival > self.current_time:
+                return True
+            
+            # Si es presente, verificar si entra en el sistema (por tamaño fisico).
+            # Si es <= max_partition, es viable.
+            if p.size <= max_partition_size:
+                return True
+            
+            # Si size > max_partition, es un proceso "invalido" que se quedara en arrivals.
+            # Si SOLO quedan estos, el bucle termina y retornamos False al final.
+
+        # Si llegamos aca, es porque todos los processes en arrivals son presentes Y oversized.
+        # Y no hay nada mas en el sistema.
+        return False
     
     def _manejar_llegadas(self) -> bool:
         """Gestiona la llegada de procesos en el instante de tiempo actual."""
         eventos = False
-        arriving_processes = []
         
-        # Buscar procesos cuya hora de llegada ya pasó o es la actual.
-        # Esto asegura que los procesos que no pudieron entrar antes sean reintentados.
+        # 1. Identificar procesos que deben ser intentados en este tick.
+        # Incluye:
+        # - Procesos que acaban de llegar (arrival == current_time)
+        # - Procesos que llegaron antes pero no entraron (sobredimensionados o sistema lleno) y están al inicio de self.arrivals
+        
+        procesos_para_intentar = []
         while self.arrivals and self.arrivals[0].arrival <= self.current_time:
-            arriving_processes.append(self.arrivals.pop(0))
+             procesos_para_intentar.append(self.arrivals.pop(0))
+             
+        # Si no hay nada para intentar, salimos.
+        if not procesos_para_intentar:
+            return False
+            
+        # 2. Procesar la lista
+        procesos_no_procesados = []
+        
+        for process in procesos_para_intentar:
+            # A. Verificar tamaño físico
+            max_partition_size = self.memory_manager.get_max_partition_size()
+            
+            if process.size > max_partition_size:
+                # GIGANTE. Se queda en el limbo (New). No entra a RAM.
+                # Se devuelve a la cola de arrivals al final.
+                procesos_no_procesados.append(process)
+                continue
 
-        # Procesar la lista de procesos que llegaron en este tick
-        for i, process in enumerate(arriving_processes):
-            # Solo se admite un nuevo proceso si el grado de multiprogramación es menor al máximo.
+            # B. Verificar grado de multiprogramación
             if self.scheduler.contar_en_memoria() >= self.max_multiprogramming:
-                # El sistema está lleno. Los procesos restantes de este tick se devuelven
-                # a la cola de llegadas para ser reintentados en el siguiente tick.
-                self.logger.debug(f"Proceso {process.pid} no admitido. Grado de multiprogramación ({self.scheduler.contar_en_memoria()}) al máximo.")
-                
-                # Re-insertar los procesos no admitidos al principio de la cola de llegadas.
-                procesos_no_admitidos = arriving_processes[i:]
-                self.arrivals = procesos_no_admitidos + self.arrivals
-                break  # No se pueden admitir más procesos en este tick.
+                # Sistema lleno.
+                procesos_no_procesados.append(process)
+                # Si este no entra, los siguientes tampoco (FIFO estricto para justicia).
+                idx = procesos_para_intentar.index(process)
+                procesos_no_procesados.extend(procesos_para_intentar[idx+1:])
+                break
 
-            # Hay espacio en el sistema. Intentar colocar en memoria.
+            # C. Intentar asignar memoria (Best Fit)
             partition = self.memory_manager.mejor_ajuste(process.size)
+            
             if partition is not None:
-                # Se encontró partición, el proceso va a la cola de listos.
+                # Éxito: asignar y pasar a Ready
                 self.memory_manager.asignar(partition, process.pid)
                 process.state = State.READY
                 self.scheduler.insertar_en_listos(process)
                 eventos = True
             else:
-                # No hay partición de memoria, pero sí hay espacio en el sistema. Se suspende.
+                # No cabe en memoria, pero hay slot de multiprogramación. Pasar a Ready-Suspended.
                 process.state = State.READY_SUSP
                 self.scheduler.encolar_en_suspendidos(process)
                 eventos = True
 
+        # 3. Re-insertar los no procesados al principio de self.arrivals
+        if procesos_no_procesados:
+            self.arrivals = procesos_no_procesados + self.arrivals
+            
         return eventos
 
 
@@ -414,12 +454,14 @@ class MemorySimulator:
             mem_table,
             ready_processes,
             suspended_processes,
+            self.arrivals,
             structured=structured
         )
     
     def _calcular_metricas(self) -> Dict:
         """Calcula las métricas finales de la simulación."""
-        if not self.terminated:
+        # Si no hay terminados NI pendientes en arrivals, retorna vacío.
+        if not self.terminated and not self.arrivals:
             return {
                 'processes': [],
                 'avg_turnaround': 0.0,
@@ -433,6 +475,7 @@ class MemorySimulator:
         total_turnaround = 0
         total_wait = 0
 
+        # 1. Procesos que terminaron correctamente
         for process in self.terminated:
             # Cálculos precisos
             turnaround = process.finish_time - process.arrival
@@ -446,13 +489,29 @@ class MemorySimulator:
                 'burst': process.burst,
                 'start_time': process.start_time,
                 'finish_time': process.finish_time,
-                'size': process.size
+                'size': process.size,
+                'state': process.state.value
             })
             
             total_turnaround += turnaround
             total_wait += wait
         
-        # Calcular promedios
+        # 2. Procesos que quedaron en la cola de llegadas (sobredimensionados o no admitidos)
+        for process in self.arrivals:
+             # Para estos procesos, tiempos son None/0
+             process_metrics.append({
+                'pid': process.pid,
+                'turnaround': 0, 
+                'wait': 0,
+                'arrival': process.arrival,
+                'burst': process.burst,
+                'start_time': None,
+                'finish_time': None,
+                'size': process.size,
+                'state': process.state.value # Debera ser 'NUEVO'
+            })
+
+        # 3. Calcular promedios (solo de los terminados)
         num_processes = len(self.terminated)
         avg_turnaround = total_turnaround / num_processes if num_processes > 0 else 0.0
         avg_wait = total_wait / num_processes if num_processes > 0 else 0.0

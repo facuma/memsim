@@ -117,8 +117,9 @@ class MemSimGUI(tk.Tk):
         paned.add(left_frame, weight=3)
         left_frame.columnconfigure(0, weight=1)
         left_frame.rowconfigure(1, weight=1) # Tabla de memoria
-        left_frame.rowconfigure(3, weight=1) # Cola de listos
-        left_frame.rowconfigure(5, weight=1) # Cola de suspendidos
+        left_frame.rowconfigure(3, weight=1) # Cola de nuevos
+        left_frame.rowconfigure(5, weight=1) # Cola de listos
+        left_frame.rowconfigure(7, weight=1) # Cola de suspendidos
 
         # -- Tabla de Memoria --
         ttk.Label(left_frame, text="Tabla de Memoria").grid(row=0, column=0, sticky="w", pady=(0, 4))
@@ -140,16 +141,36 @@ class MemSimGUI(tk.Tk):
         self.mem_tree.heading("frag", text="Frag. Int.")
         self.mem_tree.heading("libre", text="Libre")
         for col in self.mem_tree['columns']:
-            self.mem_tree.column(col, width=60, anchor="center")
+            self.mem_tree.column(col, width=55, anchor="center")
+
+        # -- Cola de Nuevos (Arrivals) --
+        ttk.Label(left_frame, text="Cola de Nuevos (Pendientes)").grid(row=2, column=0, sticky="w", pady=(10, 4))
+        new_container = ttk.Frame(left_frame)
+        new_container.grid(row=3, column=0, sticky="nsew")
+        new_container.columnconfigure(0, weight=1)
+        new_container.rowconfigure(0, weight=1)
+
+        self.new_tree = ttk.Treeview(new_container, columns=("pid", "tam", "llegada"), show="headings", height=3)
+        self.new_tree.grid(row=0, column=0, sticky="nsew")
+        self.new_tree.heading("pid", text="PID")
+        self.new_tree.heading("tam", text="Tamaño")
+        self.new_tree.heading("llegada", text="Llegada")
+        self.new_tree.column("pid", anchor="center", width=60)
+        self.new_tree.column("tam", anchor="center", width=60)
+        self.new_tree.column("llegada", anchor="center", width=60)
+        
+        # Color rojo para identificar facilmente los sobredimensionados
+        self.new_tree.tag_configure("oversized", foreground="red")
+
 
         # -- Cola de Listos --
-        ttk.Label(left_frame, text="Cola de Listos").grid(row=2, column=0, sticky="w", pady=(10, 4))
+        ttk.Label(left_frame, text="Cola de Listos").grid(row=4, column=0, sticky="w", pady=(10, 4))
         ready_container = ttk.Frame(left_frame)
-        ready_container.grid(row=3, column=0, sticky="nsew")
+        ready_container.grid(row=5, column=0, sticky="nsew")
         ready_container.columnconfigure(0, weight=1)
         ready_container.rowconfigure(0, weight=1)
 
-        self.ready_tree = ttk.Treeview(ready_container, columns=("pid", "restante"), show="headings")
+        self.ready_tree = ttk.Treeview(ready_container, columns=("pid", "restante"), show="headings", height=3)
         self.ready_tree.grid(row=0, column=0, sticky="nsew")
         self.ready_tree.heading("pid", text="PID")
         self.ready_tree.heading("restante", text="Restante")
@@ -157,13 +178,13 @@ class MemSimGUI(tk.Tk):
         self.ready_tree.column("restante", anchor="center", width=80)
 
         # -- Cola de Listos/Suspendidos --
-        ttk.Label(left_frame, text="Cola de Listos/Suspendidos").grid(row=4, column=0, sticky="w", pady=(10, 4))
+        ttk.Label(left_frame, text="Cola de Listos/Suspendidos").grid(row=6, column=0, sticky="w", pady=(10, 4))
         susp_container = ttk.Frame(left_frame)
-        susp_container.grid(row=5, column=0, sticky="nsew")
+        susp_container.grid(row=7, column=0, sticky="nsew")
         susp_container.columnconfigure(0, weight=1)
         susp_container.rowconfigure(0, weight=1)
 
-        self.susp_tree = ttk.Treeview(susp_container, columns=("pid", "tam"), show="headings")
+        self.susp_tree = ttk.Treeview(susp_container, columns=("pid", "tam"), show="headings", height=3)
         self.susp_tree.grid(row=0, column=0, sticky="nsew")
         self.susp_tree.heading("pid", text="PID")
         self.susp_tree.heading("tam", text="Tamaño")
@@ -173,6 +194,7 @@ class MemSimGUI(tk.Tk):
         # Panel derecho: estado y métricas
         right_frame = ttk.Frame(paned, padding=8)
         paned.add(right_frame, weight=2)
+
 
         estado_frame = ttk.LabelFrame(right_frame, text="Estado actual")
         estado_frame.pack(fill=tk.X)
@@ -217,6 +239,9 @@ class MemSimGUI(tk.Tk):
         for key, text in headings.items():
             self.metrics_tree.heading(key, text=text)
             self.metrics_tree.column(key, width=90, anchor=tk.CENTER)
+            
+        # Configurar etiqueta para procesos rechazados
+        self.metrics_tree.tag_configure("rejected", foreground="red")
 
         self.metrics_tree.pack(fill=tk.BOTH, expand=True)
 
@@ -380,7 +405,7 @@ class MemSimGUI(tk.Tk):
 
     def _actualizar_vista_snapshot(self, snapshot_data: Dict) -> None:
         # Limpiar vistas
-        for tree in [self.mem_tree, self.ready_tree, self.susp_tree]:
+        for tree in [self.mem_tree, self.ready_tree, self.susp_tree, self.new_tree]:
             for item in tree.get_children():
                 tree.delete(item)
 
@@ -395,6 +420,17 @@ class MemSimGUI(tk.Tk):
                 entry['id'], entry['start'], entry['size'], pid_str,
                 entry['frag_interna'], free_str
             ))
+
+        # Poblar cola de nuevos (arrivals)
+        new_list = snapshot_data.get("arrivals", [])
+        for proc in new_list:
+            tags = ()
+            # Marcar en rojo si es sobredimensionado (> 250)
+            # Esto es hardcoded por ahora, idealmente leer max_partition del config/memory
+            if proc.size > 250:
+                tags = ("oversized",)
+            
+            self.new_tree.insert("", END, values=(proc.pid, proc.size, proc.arrival), tags=tags)
 
         # Poblar cola de listos
         ready_list = snapshot_data.get("ready", [])
@@ -423,10 +459,36 @@ class MemSimGUI(tk.Tk):
 
         processes = summary.get("processes", [])
         for proc in processes:
-            self.metrics_tree.insert(
-                "",
-                tk.END,
-                values=(
+            values = []
+            tags = ()
+            
+            # Chequear si es un proceso rechazado por tamaño
+            # Ahora el estado es 'NUEVO' (NEW), pero podemos inferir el rechazo
+            # si el tiempo de inicio es None y/o el estado es NEW en la lista final.
+            state = proc.get('state')
+            
+            # Logica de visualizacion para procesos no ejecutados (Rechazados o no llegaron a entrar)
+            if state == 'NUEVO' or state == 'RECHAZADO': # RECHAZADO por compatibilidad si quedo alguno
+                tags = ("rejected",)
+                # Mensaje de error personalizado
+                msg_error = "No procesado"
+                # Si podemos acceder al max partition size seria ideal, pero aqui solo tenemos datos crudos.
+                # Asumimos que si esta aqui y es NEW, fue porque no entro.
+                if proc.get('size', 0) > 250: # Harcodeamos 250 o asumimos que es 'Muy grande'
+                     msg_error = "Error: Muy grande"
+                
+                values = [
+                    proc.get("pid"),
+                    proc.get("arrival"),
+                    proc.get("burst"),
+                    "---", # Inicio
+                    "---", # Fin
+                    msg_error, # Retorno (usado para mensaje)
+                    "---", # Espera
+                    proc.get("size"),
+                ]
+            else:
+                values = [
                     proc.get("pid"),
                     proc.get("arrival"),
                     proc.get("burst"),
@@ -435,7 +497,13 @@ class MemSimGUI(tk.Tk):
                     proc.get("turnaround"),
                     proc.get("wait"),
                     proc.get("size"),
-                ),
+                ]
+
+            self.metrics_tree.insert(
+                "",
+                tk.END,
+                values=values,
+                tags=tags
             )
 
         self.avg_turnaround_var.set(

@@ -67,6 +67,7 @@ def pretty_print_estado(
     mem_table: List[dict], 
     ready: List[Process],
     ready_susp: List[Process],
+    arrivals: List[Process] = [],
     structured: bool = False
 ) -> object:
     """
@@ -78,13 +79,19 @@ def pretty_print_estado(
         mem_table: Tabla de memoria con información de las particiones.
         ready: Lista de procesos en la cola de listos.
         ready_susp: Lista de procesos en la cola de listos/suspendidos.
+        arrivals: Lista de procesos en la cola de nuevos (llegadas pendientes).
         
     Returns:
         - Si `structured` es False (por defecto), devuelve una cadena de texto formateada.
         - Si `structured` es True, devuelve un diccionario con los datos.
     """
     if structured:
-        return {"mem_table": mem_table, "ready": ready, "ready_susp": ready_susp}
+        return {
+            "mem_table": mem_table, 
+            "ready": ready, 
+            "ready_susp": ready_susp,
+            "arrivals": arrivals
+        }
 
     # El resto de la función es para la salida de texto (CLI)
     lines = []
@@ -109,6 +116,16 @@ def pretty_print_estado(
     else:
         lines.append("  (no memory partitions)")
     
+    # Cola de Nuevos (Arrivals)
+    lines.append("Cola Nuevos:")
+    if arrivals:
+        new_info = []
+        for proc in arrivals:
+            new_info.append(f"pid={proc.pid}(size={proc.size}, arr={proc.arrival})")
+        lines.append(f"  {' '.join(new_info)}")
+    else:
+        lines.append("  (Vacio)")
+
     # Cola de listos
     lines.append("Cola Listo:")
     if ready:
