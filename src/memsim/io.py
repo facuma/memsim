@@ -28,7 +28,7 @@ def leer_procesos_csv(path: str) -> List[Process]:
     processes = []
     
     try:
-        with open(path, 'r', newline='', encoding='utf-8') as csvfile:
+        with open(path, 'r', newline='', encoding='utf-8-sig') as csvfile:
             reader = csv.DictReader(csvfile)
             
             for row in reader:

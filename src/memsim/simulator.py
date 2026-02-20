@@ -57,6 +57,13 @@ class MemorySimulator:
     
     def inicializar(self, processes: List[Process]):
         """Inicializa el estado interno para una nueva ejecución."""
+        # Reiniciar el estado de cada proceso para permitir re-ejecuciones.
+        for p in processes:
+            p.remaining = p.burst
+            p.start_time = None
+            p.finish_time = None
+            p.state = State.NEW
+            
         self.arrivals = sorted(processes, key=lambda p: (p.arrival, p.pid))
         self.terminated = []
         self.current_time = 0

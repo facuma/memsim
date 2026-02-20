@@ -291,7 +291,6 @@ class MemSimGUI(tk.Tk):
             processes = leer_procesos_csv(filepath)
         except (FileNotFoundError, ValueError) as exc:
             messagebox.showwarning(
-                self,
                 "Error al abrir CSV",
                 f"No se pudo cargar el archivo seleccionado.\nMotivo: {exc}",
             )
@@ -309,7 +308,6 @@ class MemSimGUI(tk.Tk):
     def al_inicializar(self) -> None:
         if not self.processes:
             messagebox.showwarning(
-                self,
                 "Procesos no disponibles",
                 "Debe cargar un archivo CSV antes de inicializar la simulación.",
             )
@@ -331,7 +329,6 @@ class MemSimGUI(tk.Tk):
     def al_dar_paso(self) -> None:
         if not self.simulation_started:
             messagebox.showwarning(
-                self,
                 "Simulación no inicializada",
                 "Inicialice la simulación antes de avanzar ticks.",
             )
@@ -348,7 +345,6 @@ class MemSimGUI(tk.Tk):
     def al_ir_a_evento(self) -> None:
         if not self.simulation_started:
             messagebox.showwarning(
-                self,
                 "Simulación no inicializada",
                 "Inicialice la simulación antes de avanzar ticks.",
             )
@@ -370,7 +366,6 @@ class MemSimGUI(tk.Tk):
     def al_finalizar(self) -> None:
         if not self.simulation_started:
             messagebox.showwarning(
-                self,
                 "Simulación no inicializada",
                 "Inicialice la simulación antes de finalizar.",
             )
